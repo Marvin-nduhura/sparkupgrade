@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="192" height="192" viewBox="0 0 192 192">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#f97316"/>
+      <stop offset="100%" stop-color="#c2410c"/>
+    </linearGradient>
+  </defs>
+  <rect width="192" height="192" rx="42" fill="url(#bg)"/>
+  <!-- Hard hat brim -->
+  <ellipse cx="96" cy="115.19999999999999" rx="61.44" ry="17.28" fill="rgba(255,255,255,0.95)"/>
+  <!-- Hard hat dome -->
+  <path d="M 34.56 107.52000000000001 A 61.44 61.44 0 0 1 157.44 107.52000000000001 Z" fill="rgba(255,255,255,0.95)"/>
+  <!-- Band -->
+  <rect x="34.56" y="101.76" width="122.88" height="13.440000000000001" rx="2.88" fill="rgba(249,115,22,0.6)"/>
+  <!-- BS text -->
+  <text x="96" y="151.68" font-family="Arial,sans-serif" font-weight="900" font-size="35" fill="rgba(255,255,255,0.92)" text-anchor="middle" dominant-baseline="middle">BS</text>
+</svg>

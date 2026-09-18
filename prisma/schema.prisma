@@ -1,0 +1,588 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============ ENUMS ============
+
+enum UserRole {
+  SYSTEM_ADMIN
+  SITE_MANAGER
+  ACCOUNTANT
+}
+
+enum ProjectStatus {
+  PLANNING
+  ACTIVE
+  ON_HOLD
+  COMPLETED
+  CANCELLED
+}
+
+enum RequestStatus {
+  PENDING
+  REVIEWED
+  APPROVED
+  REJECTED
+  PARTIALLY_APPROVED
+}
+
+enum PaymentMethod {
+  CASH
+  BANK_TRANSFER
+  MTN_MOBILE_MONEY
+  AIRTEL_MONEY
+  PESAPAL
+  CHEQUE
+  OTHER
+}
+
+enum TransactionType {
+  INCOME
+  EXPENSE
+  TRANSFER
+}
+
+enum ExpenseCategory {
+  MATERIALS
+  LABOUR
+  UTILITIES
+  EQUIPMENT
+  TRANSPORT
+  OFFICE
+  MISCELLANEOUS
+  CHARGES
+}
+
+enum NotificationPriority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+enum InstallmentStatus {
+  PARTIAL
+  COMPLETED
+}
+
+enum AuditAction {
+  CREATE
+  UPDATE
+  DELETE
+  LOGIN
+  LOGOUT
+  APPROVE
+  REJECT
+  ASSIGN
+  UNASSIGN
+  SEND_MONEY
+  VIEW
+  DOWNLOAD
+  UPLOAD
+}
+
+// ============ MODELS ============
+
+model User {
+  id                String    @id @default(cuid())
+  email             String    @unique
+  name              String
+  password          String?
+  role              UserRole  @default(SITE_MANAGER)
+  avatar            String?
+  phone             String?
+  isActive          Boolean   @default(true)
+  googleId          String?   @unique
+  lastLogin         DateTime?
+  passwordChangedAt DateTime?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  // Payment accounts
+  mtnNumber    String?
+  airtelNumber String?
+  bankAccount  String?
+  bankName     String?
+
+  // Theme preferences
+  themePreference String @default("system")
+  colorScheme     String @default("orange")
+
+  // Permissions (fine-grained overrides)
+  permissions UserPermission[]
+
+  // Relations
+  createdProjects    Project[]          @relation("CreatedBy")
+  managedProjects    ProjectAssignment[]
+  moneyReceived      MoneyReceived[]
+  inventoryItems     InventoryItem[]    @relation("AddedBy")
+  purchases          Purchase[]         @relation("PurchasedBy")
+  requests           Request[]          @relation("RequestedBy")
+  sentNotifications  Notification[]     @relation("SentBy")
+  notifications      UserNotification[]
+  auditLogs          AuditLog[]
+  officeExpenses     OfficeExpense[]
+  projectImages      ProjectImage[]
+  moneyTransfers     MoneyTransfer[]    @relation("SentBy")
+  receivedTransfers  MoneyTransfer[]    @relation("ReceivedBy")
+  sessions           Session[]
+
+  @@map("users")
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  userId    String
+  token     String   @unique
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("sessions")
+}
+
+model UserPermission {
+  id         String   @id @default(cuid())
+  userId     String
+  permission String
+  granted    Boolean  @default(true)
+  createdAt  DateTime @default(now())
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, permission])
+  @@map("user_permissions")
+}
+
+model Project {
+  id          String        @id @default(cuid())
+  name        String
+  description String?
+  location    String
+  latitude    Float?
+  longitude   Float?
+  status      ProjectStatus @default(ACTIVE)
+  imageUrl    String?
+  startDate   DateTime      @default(now())
+  endDate     DateTime?
+  budget      Float?
+  createdById String
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  createdBy   User                @relation("CreatedBy", fields: [createdById], references: [id])
+  assignments ProjectAssignment[]
+  moneyReceived MoneyReceived[]
+  purchases   Purchase[]
+  requests    Request[]
+  inventory   ProjectInventory[]
+  images      ProjectImage[]
+  utilities   Utility[]
+  charges     SiteCharge[]
+  otherExpenses OtherExpense[]
+  notifications Notification[]
+  auditLogs   AuditLog[]
+
+  @@map("projects")
+}
+
+model ProjectAssignment {
+  id          String    @id @default(cuid())
+  projectId   String
+  userId      String
+  assignedAt  DateTime  @default(now())
+  unassignedAt DateTime?
+  isActive    Boolean   @default(true)
+  assignedBy  String?
+
+  project     Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("project_assignments")
+}
+
+model MoneyReceived {
+  id            String        @id @default(cuid())
+  projectId     String
+  amount        Float
+  source        String
+  paymentMethod PaymentMethod
+  receivedDate  DateTime
+  description   String?
+  reference     String?
+  receivedById  String
+  transferId    String?       @unique
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  project       Project       @relation(fields: [projectId], references: [id])
+  receivedBy    User          @relation(fields: [receivedById], references: [id])
+  transfer      MoneyTransfer? @relation(fields: [transferId], references: [id])
+
+  @@map("money_received")
+}
+
+model MoneyTransfer {
+  id            String        @id @default(cuid())
+  fromUserId    String
+  toUserId      String
+  projectId     String?
+  amount        Float
+  paymentMethod PaymentMethod
+  reference     String?
+  pesapalRef    String?
+  status        String        @default("PENDING")
+  description   String?
+  sentAt        DateTime      @default(now())
+  confirmedAt   DateTime?
+  createdAt     DateTime      @default(now())
+
+  sentBy        User          @relation("SentBy", fields: [fromUserId], references: [id])
+  receivedBy    User          @relation("ReceivedBy", fields: [toUserId], references: [id])
+  moneyReceived MoneyReceived?
+
+  @@map("money_transfers")
+}
+
+model InventoryItem {
+  id              String   @id @default(cuid())
+  name            String   @unique
+  description     String?
+  unit            String   // kg, litres, bags, pieces, etc.
+  category        String
+  currentQuantity Float    @default(0)
+  minimumQuantity Float    @default(0)
+  unitPrice       Float    @default(0)
+  addedById       String
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  addedBy         User              @relation("AddedBy", fields: [addedById], references: [id])
+  projectInventory ProjectInventory[]
+  purchaseItems   PurchaseItem[]
+  requestItems    RequestItem[]
+  usageRecords    InventoryUsage[]
+
+  @@map("inventory_items")
+}
+
+model ProjectInventory {
+  id          String   @id @default(cuid())
+  projectId   String
+  itemId      String
+  quantity    Float    @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  project     Project       @relation(fields: [projectId], references: [id])
+  item        InventoryItem @relation(fields: [itemId], references: [id])
+
+  @@unique([projectId, itemId])
+  @@map("project_inventory")
+}
+
+model InventoryUsage {
+  id          String   @id @default(cuid())
+  itemId      String
+  projectId   String?
+  quantity    Float
+  usedDate    DateTime @default(now())
+  description String?
+  createdAt   DateTime @default(now())
+
+  item        InventoryItem @relation(fields: [itemId], references: [id])
+
+  @@map("inventory_usage")
+}
+
+model Purchase {
+  id              String            @id @default(cuid())
+  projectId       String
+  purchasedById   String
+  totalAmount     Float
+  amountPaid      Float             @default(0)
+  amountDue       Float
+  paymentStatus   InstallmentStatus @default(PARTIAL)
+  purchaseDate    DateTime
+  description     String?
+  receiptId       String?
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+
+  project         Project           @relation(fields: [projectId], references: [id])
+  purchasedBy     User              @relation("PurchasedBy", fields: [purchasedById], references: [id])
+  items           PurchaseItem[]
+  installments    Installment[]
+  receipt         Receipt?          @relation(fields: [receiptId], references: [id])
+
+  @@map("purchases")
+}
+
+model PurchaseItem {
+  id          String   @id @default(cuid())
+  purchaseId  String
+  itemId      String
+  quantity    Float
+  unitPrice   Float
+  totalPrice  Float
+  createdAt   DateTime @default(now())
+
+  purchase    Purchase      @relation(fields: [purchaseId], references: [id], onDelete: Cascade)
+  item        InventoryItem @relation(fields: [itemId], references: [id])
+
+  @@map("purchase_items")
+}
+
+model Installment {
+  id              String        @id @default(cuid())
+  purchaseId      String
+  amount          Float
+  paymentMethod   PaymentMethod
+  paymentDate     DateTime
+  reference       String?
+  receiptId       String?
+  verifiedByAi    Boolean       @default(false)
+  aiVerification  String?
+  createdAt       DateTime      @default(now())
+
+  purchase        Purchase      @relation(fields: [purchaseId], references: [id], onDelete: Cascade)
+  receipt         Receipt?      @relation(fields: [receiptId], references: [id])
+
+  @@map("installments")
+}
+
+model Receipt {
+  id          String   @id @default(cuid())
+  fileUrl     String
+  fileName    String
+  fileType    String
+  description String?
+  aiVerified  Boolean  @default(false)
+  aiResult    String?
+  uploadedAt  DateTime @default(now())
+  projectId   String?
+
+  purchases   Purchase[]
+  installments Installment[]
+  charges     SiteCharge[]
+  utilities   Utility[]
+  otherExpenses OtherExpense[]
+  officeExpenses OfficeExpense[]
+
+  @@map("receipts")
+}
+
+model Request {
+  id              String        @id @default(cuid())
+  projectId       String
+  requestedById   String
+  title           String
+  description     String?
+  status          RequestStatus @default(PENDING)
+  totalAmount     Float
+  reviewedById    String?
+  reviewedAt      DateTime?
+  reviewNotes     String?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  project         Project       @relation(fields: [projectId], references: [id])
+  requestedBy     User          @relation("RequestedBy", fields: [requestedById], references: [id])
+  items           RequestItem[]
+
+  @@map("requests")
+}
+
+model RequestItem {
+  id          String   @id @default(cuid())
+  requestId   String
+  itemId      String?
+  itemName    String
+  quantity    Float
+  unit        String
+  unitPrice   Float
+  totalPrice  Float
+  category    ExpenseCategory
+  description String?
+  createdAt   DateTime @default(now())
+
+  request     Request       @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  item        InventoryItem? @relation(fields: [itemId], references: [id])
+
+  @@map("request_items")
+}
+
+model Utility {
+  id          String        @id @default(cuid())
+  projectId   String
+  name        String
+  category    String
+  amount      Float
+  paymentMethod PaymentMethod @default(CASH)
+  usageDate   DateTime
+  description String?
+  receiptId   String?
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  project     Project       @relation(fields: [projectId], references: [id])
+  receipt     Receipt?      @relation(fields: [receiptId], references: [id])
+
+  @@map("utilities")
+}
+
+model SiteCharge {
+  id          String        @id @default(cuid())
+  projectId   String
+  name        String
+  category    String
+  amount      Float
+  paymentMethod PaymentMethod @default(CASH)
+  chargeDate  DateTime
+  description String?
+  receiptId   String?
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  project     Project       @relation(fields: [projectId], references: [id])
+  receipt     Receipt?      @relation(fields: [receiptId], references: [id])
+
+  @@map("site_charges")
+}
+
+model OtherExpense {
+  id          String        @id @default(cuid())
+  projectId   String
+  name        String
+  category    String
+  amount      Float
+  paymentMethod PaymentMethod @default(CASH)
+  expenseDate DateTime
+  description String?
+  receiptId   String?
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  project     Project       @relation(fields: [projectId], references: [id])
+  receipt     Receipt?      @relation(fields: [receiptId], references: [id])
+
+  @@map("other_expenses")
+}
+
+model OfficeExpense {
+  id          String        @id @default(cuid())
+  userId      String
+  name        String
+  category    String
+  amount      Float
+  paymentMethod PaymentMethod @default(CASH)
+  expenseDate DateTime
+  description String?
+  receiptId   String?
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  user        User          @relation(fields: [userId], references: [id])
+  receipt     Receipt?      @relation(fields: [receiptId], references: [id])
+
+  @@map("office_expenses")
+}
+
+model ProjectImage {
+  id          String   @id @default(cuid())
+  projectId   String
+  uploadedById String
+  collectionName String?
+  imageUrl    String
+  fileName    String
+  description String?
+  takenAt     DateTime @default(now())
+  createdAt   DateTime @default(now())
+
+  project     Project  @relation(fields: [projectId], references: [id])
+  uploadedBy  User     @relation(fields: [uploadedById], references: [id])
+
+  @@map("project_images")
+}
+
+model Notification {
+  id          String               @id @default(cuid())
+  title       String
+  message     String
+  priority    NotificationPriority @default(MEDIUM)
+  projectId   String?
+  sentById    String
+  isGlobal    Boolean              @default(false)
+  createdAt   DateTime             @default(now())
+
+  sentBy      User                 @relation("SentBy", fields: [sentById], references: [id])
+  project     Project?             @relation(fields: [projectId], references: [id])
+  recipients  UserNotification[]
+
+  @@map("notifications")
+}
+
+model UserNotification {
+  id             String       @id @default(cuid())
+  userId         String
+  notificationId String
+  isRead         Boolean      @default(false)
+  readAt         DateTime?
+  createdAt      DateTime     @default(now())
+
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  notification   Notification @relation(fields: [notificationId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, notificationId])
+  @@map("user_notifications")
+}
+
+model AuditLog {
+  id          String      @id @default(cuid())
+  userId      String?
+  projectId   String?
+  action      AuditAction
+  resource    String
+  resourceId  String?
+  details     Json?
+  ipAddress   String?
+  userAgent   String?
+  createdAt   DateTime    @default(now())
+
+  user        User?       @relation(fields: [userId], references: [id])
+  project     Project?    @relation(fields: [projectId], references: [id])
+
+  @@map("audit_logs")
+}
+
+model CompanySettings {
+  id              String   @id @default(cuid())
+  companyName     String   @default("Spark Construction Limited")
+  logo            String?
+  address         String?
+  phone           String?
+  email           String?
+  website         String?
+  currency        String   @default("UGX")
+  currencySymbol  String   @default("UGX")
+  // Bank accounts
+  bankName1       String?
+  bankAccount1    String?
+  bankName2       String?
+  bankAccount2    String?
+  // Mobile money
+  mtnNumber       String?
+  airtelNumber    String?
+  // PesaPal
+  pesapalKey      String?
+  pesapalSecret   String?
+  // Gemini AI
+  geminiKey       String?
+  updatedAt       DateTime @updatedAt
+
+  @@map("company_settings")
+}
