@@ -4,8 +4,8 @@ services:
     runtime: node
     region: oregon
     plan: free
-    buildCommand: npm install --legacy-peer-deps && npm run build
-    startCommand: node node_modules/prisma/build/index.js migrate deploy && npm start
+    buildCommand: npm install --legacy-peer-deps && ./node_modules/.bin/prisma generate && npm run build
+    startCommand: ./node_modules/.bin/prisma migrate deploy && npm start
     envVars:
       - key: NODE_ENV
         value: production
