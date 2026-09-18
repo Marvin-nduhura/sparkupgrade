@@ -136,5 +136,7 @@ async function main() {
 }
 
 main()
-  .catch(console.error)
+  .catch((e) => {
+    console.warn("⚠️  Seed warning (non-fatal):", e.message);
+  })
   .finally(() => prisma.$disconnect());
