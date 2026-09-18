@@ -3,12 +3,16 @@
   "version": "1.0.0",
   "description": "BuildSpark – Spark Construction Limited Management System",
   "private": true,
+  "engines": {
+    "node": "20.x",
+    "npm": ">=10"
+  },
   "scripts": {
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "postinstall": "node node_modules/prisma/build/index.js generate",
+    "postinstall": "node node_modules/.bin/prisma generate || node node_modules/prisma/build/index.js generate",
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate dev",
     "db:push": "prisma db push",
