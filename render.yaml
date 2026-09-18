@@ -16,7 +16,7 @@ services:
           name: buildspark-db
           property: connectionString
       - key: NEXTAUTH_URL
-        sync: false
+        value: https://buildspark-4mn0.onrender.com
       - key: NEXTAUTH_SECRET
         generateValue: true
       - key: GOOGLE_CLIENT_ID
@@ -34,7 +34,7 @@ services:
       - key: PESAPAL_IPN_URL
         sync: false
       - key: NEXT_PUBLIC_APP_URL
-        sync: false
+        value: https://buildspark-4mn0.onrender.com
 
 databases:
   - name: buildspark-db
