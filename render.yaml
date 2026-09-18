@@ -5,7 +5,7 @@ services:
     region: oregon
     plan: free
     buildCommand: npm install --legacy-peer-deps && npm run build
-    startCommand: npx prisma migrate deploy && npm start
+    startCommand: node node_modules/prisma/build/index.js migrate deploy && npm start
     envVars:
       - key: NODE_ENV
         value: production
