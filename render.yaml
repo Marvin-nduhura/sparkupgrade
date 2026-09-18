@@ -4,7 +4,7 @@ services:
     runtime: node
     region: oregon
     plan: free
-    buildCommand: npm install && npx prisma generate && npm run build
+    buildCommand: npm install --legacy-peer-deps && npx prisma generate && npm run build
     startCommand: npx prisma migrate deploy && npm start
     envVars:
       - key: NODE_ENV
@@ -29,22 +29,10 @@ services:
         sync: false
       - key: PESAPAL_BASE_URL
         value: https://pay.pesapal.com/v3
+      - key: PESAPAL_IPN_URL
+        sync: false
       - key: NEXT_PUBLIC_APP_URL
         sync: false
-    disk:
-      name: uploads
-      mountPath: /opt/render/project/src/public/uploads
-      sizeGB: 5
-    headers:
-      - path: /*
-        name: X-Frame-Options
-        value: DENY
-      - path: /*
-        name: X-Content-Type-Options
-        value: nosniff
-      - path: /*
-        name: Referrer-Policy
-        value: strict-origin-when-cross-origin
 
 databases:
   - name: buildspark-db
