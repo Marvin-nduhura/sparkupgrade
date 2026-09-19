@@ -47,6 +47,10 @@ export default async function ProjectDetailPage({ params }: { params: { id: stri
         orderBy: { takenAt: "desc" },
         include: { uploadedBy: { select: { name: true } } },
       },
+      inventory: {
+        orderBy: { updatedAt: "desc" },
+        include: { item: { select: { id: true, name: true, unit: true, category: true, unitPrice: true, currentQuantity: true, minimumQuantity: true } } },
+      },
       _count: { select: { purchases: true, requests: true, images: true, moneyReceived: true } },
     },
   });

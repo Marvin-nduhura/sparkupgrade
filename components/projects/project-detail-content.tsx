@@ -6,7 +6,8 @@ import {
   Building2, MapPin, Calendar, Users, Package, Receipt, DollarSign,
   TrendingUp, TrendingDown, Camera, Edit2, ArrowLeft, ChevronDown,
   ChevronRight, Clock, CheckCircle2, Image, Zap, FileText, Map,
-  Navigation, HardHat, AlertCircle, Plus, ExternalLink, Eye, X
+  Navigation, HardHat, AlertCircle, Plus, ExternalLink, Eye, X,
+  Loader2, AlertTriangle, RefreshCw, Search
 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -15,11 +16,15 @@ import type { Session } from "next-auth";
 import { ReceiptViewModal } from "@/components/purchases/receipt-view-modal";
 import { toast } from "sonner";
 import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useMutation } from "@tanstack/react-query";
+import { useForm } from "react-hook-form";
+import { useDebounce } from "@/hooks/use-debounce";
 
 const tabs = [
   { id: "overview", label: "Overview", icon: Building2 },
   { id: "finances", label: "Finances", icon: DollarSign },
   { id: "purchases", label: "Purchases", icon: Receipt },
+  { id: "inventory", label: "Inventory", icon: Package },
   { id: "expenses", label: "Expenses", icon: TrendingDown },
   { id: "requests", label: "Requests", icon: FileText },
   { id: "gallery", label: "Gallery", icon: Camera },
@@ -268,6 +273,10 @@ export function ProjectDetailContent({ project, session, totalReceived, totalSpe
               </div>
             )}
 
+            {activeTab === "inventory" && (
+              <ProjectInventoryTab project={project} session={session} />
+            )}
+
             {activeTab === "expenses" && (
               <div className="space-y-4">
                 {/* Quick add buttons for site managers */}
@@ -514,6 +523,374 @@ function UploadMediaModal({ projectId, onClose, onSuccess }: { projectId: string
             </motion.button>
           </div>
         </div>
+      </motion.div>
+    </div>
+  );
+}
+
+// ── Project Inventory Tab ────────────────────────────────────────────────────
+function ProjectInventoryTab({ project, session }: { project: any; session: Session }) {
+  const [subTab, setSubTab] = useState<"stock" | "usage">("stock");
+  const [usageModalOpen, setUsageModalOpen] = useState(false);
+  const [usageType, setUsageType] = useState<"USE" | "RESTOCK">("USE");
+  const queryClient = useQueryClient();
+  const isManager = session.user.role === "SITE_MANAGER";
+  const isAdmin = session.user.role === "SYSTEM_ADMIN";
+  const canRecord = isManager || isAdmin;
+
+  // Live usage records for this project
+  const { data: usageData, isLoading: usageLoading, refetch: refetchUsage } = useQuery({
+    queryKey: ["project-usage", project.id],
+    queryFn: async () => {
+      const r = await fetch(`/api/inventory/usage?projectId=${project.id}&limit=50`);
+      return r.json();
+    },
+  });
+
+  const usageRecords = usageData?.records || [];
+
+  // Static inventory from server (from project.inventory)
+  const projectInventory: any[] = project.inventory || [];
+  const totalValue = projectInventory.reduce((s: number, pi: any) => s + (pi.quantity * (pi.item?.unitPrice || 0)), 0);
+
+  const openModal = (type: "USE" | "RESTOCK") => {
+    setUsageType(type);
+    setUsageModalOpen(true);
+  };
+
+  return (
+    <div className="space-y-4">
+      {/* Action buttons */}
+      {canRecord && (
+        <div className="flex gap-2 flex-wrap">
+          <motion.button whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}
+            onClick={() => openModal("USE")}
+            className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold bg-orange-50 dark:bg-orange-950/20 text-orange-700 dark:text-orange-400 border border-orange-200 dark:border-orange-800 hover:bg-orange-100 transition-all">
+            <TrendingDown className="w-3.5 h-3.5" /> Record Usage
+          </motion.button>
+          <motion.button whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}
+            onClick={() => openModal("RESTOCK")}
+            className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold bg-green-50 dark:bg-green-950/20 text-green-700 dark:text-green-400 border border-green-200 dark:border-green-800 hover:bg-green-100 transition-all">
+            <TrendingUp className="w-3.5 h-3.5" /> Restock
+          </motion.button>
+          <Link href="/dashboard/purchases"
+            className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold btn-brand">
+            <Plus className="w-3.5 h-3.5" /> New Purchase
+          </Link>
+        </div>
+      )}
+
+      {/* Sub-tab switcher */}
+      <div className="flex gap-1 bg-muted p-1 rounded-xl w-fit">
+        {[["stock", "Stock"], ["usage", "Usage History"]].map(([v, l]) => (
+          <button key={v} onClick={() => setSubTab(v as any)}
+            className={cn("px-4 py-1.5 rounded-lg text-xs font-semibold transition-all whitespace-nowrap",
+              subTab === v ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground")}>
+            {l}
+          </button>
+        ))}
+      </div>
+
+      {/* Stock tab */}
+      {subTab === "stock" && (
+        <div className="space-y-3">
+          {/* Total value card */}
+          {projectInventory.length > 0 && (
+            <div className="bg-card border border-border rounded-2xl p-4 flex items-center justify-between">
+              <div>
+                <p className="text-xs text-muted-foreground">Total Stock Value (this project)</p>
+                <p className="text-xl font-bold font-display text-primary">{formatCurrency(totalValue)}</p>
+              </div>
+              <div className="text-right">
+                <p className="text-xs text-muted-foreground">{projectInventory.length} items</p>
+                <p className="text-xs text-amber-500">
+                  {projectInventory.filter((pi: any) => pi.item?.currentQuantity <= (pi.item?.minimumQuantity || 0) && (pi.item?.minimumQuantity || 0) > 0).length} low stock
+                </p>
+              </div>
+            </div>
+          )}
+
+          {projectInventory.length === 0 ? (
+            <div className="py-16 text-center">
+              <Package className="w-14 h-14 mx-auto mb-3 text-muted-foreground opacity-20" />
+              <p className="text-muted-foreground font-medium">No inventory assigned yet</p>
+              <p className="text-xs text-muted-foreground mt-1">Record a purchase to automatically add items to this project</p>
+            </div>
+          ) : (
+            <div className="bg-card border border-border rounded-2xl overflow-hidden">
+              <div className="overflow-x-auto">
+                <table className="w-full data-table">
+                  <thead>
+                    <tr>
+                      <th className="text-left">Item</th>
+                      <th className="text-left">Category</th>
+                      <th className="text-center">Unit</th>
+                      <th className="text-right">Qty (Project)</th>
+                      <th className="text-right">Total Stock</th>
+                      <th className="text-right">Value</th>
+                      <th className="text-center">Status</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {projectInventory.map((pi: any) => {
+                      const item = pi.item;
+                      const isLow = item?.currentQuantity <= (item?.minimumQuantity || 0) && (item?.minimumQuantity || 0) > 0;
+                      const value = pi.quantity * (item?.unitPrice || 0);
+                      return (
+                        <tr key={pi.id} className={cn("hover:bg-muted/20", isLow && "bg-amber-50/30 dark:bg-amber-950/10")}>
+                          <td className="font-medium">{item?.name}</td>
+                          <td><span className="badge-info text-[10px]">{item?.category}</span></td>
+                          <td className="text-center text-xs text-muted-foreground">{item?.unit}</td>
+                          <td className="text-right font-mono font-semibold">{pi.quantity.toLocaleString()}</td>
+                          <td className={cn("text-right font-mono text-sm", isLow ? "text-red-500 font-bold" : "text-muted-foreground")}>
+                            {item?.currentQuantity?.toLocaleString()}
+                          </td>
+                          <td className="text-right text-sm font-semibold">{formatCurrency(value)}</td>
+                          <td className="text-center">
+                            {isLow ? (
+                              <span className="flex items-center gap-1 badge-warning justify-center w-fit mx-auto">
+                                <AlertTriangle className="w-3 h-3" />Low
+                              </span>
+                            ) : (
+                              <span className="badge-success text-[10px] w-fit mx-auto block text-center">OK</span>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Usage history tab */}
+      {subTab === "usage" && (
+        <div className="space-y-3">
+          <div className="flex items-center justify-between">
+            <p className="text-sm text-muted-foreground">{usageRecords.length} records</p>
+            <button onClick={() => refetchUsage()} className="p-1.5 hover:bg-muted rounded-lg transition-colors">
+              <RefreshCw className="w-3.5 h-3.5 text-muted-foreground" />
+            </button>
+          </div>
+
+          {usageLoading ? (
+            <div className="flex items-center justify-center py-10">
+              <Loader2 className="w-6 h-6 animate-spin text-primary" />
+            </div>
+          ) : usageRecords.length === 0 ? (
+            <div className="py-16 text-center">
+              <Package className="w-14 h-14 mx-auto mb-3 text-muted-foreground opacity-20" />
+              <p className="text-muted-foreground font-medium">No usage recorded yet</p>
+              <p className="text-xs text-muted-foreground mt-1">Use the Record Usage button above to log inventory use</p>
+            </div>
+          ) : (
+            <div className="bg-card border border-border rounded-2xl overflow-hidden">
+              <div className="overflow-x-auto">
+                <table className="w-full data-table">
+                  <thead>
+                    <tr>
+                      <th className="text-left">Date</th>
+                      <th className="text-left">Item</th>
+                      <th className="text-center">Type</th>
+                      <th className="text-right">Quantity</th>
+                      <th className="text-left">Recorded By</th>
+                      <th className="text-left">Notes</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {usageRecords.map((rec: any, i: number) => (
+                      <motion.tr key={rec.id} initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: i * 0.02 }}>
+                        <td className="text-xs text-muted-foreground whitespace-nowrap">{formatDate(rec.usedDate)}</td>
+                        <td className="font-medium">{rec.item?.name} <span className="text-xs text-muted-foreground">({rec.item?.unit})</span></td>
+                        <td className="text-center">
+                          <span className={cn("flex items-center gap-1 text-xs font-semibold px-2 py-0.5 rounded-full w-fit mx-auto",
+                            rec.type === "USE" ? "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400" : "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400")}>
+                            {rec.type === "USE" ? <TrendingDown className="w-3 h-3" /> : <TrendingUp className="w-3 h-3" />}
+                            {rec.type === "USE" ? "Used" : "Restocked"}
+                          </span>
+                        </td>
+                        <td className={cn("text-right font-mono font-semibold", rec.type === "USE" ? "text-red-500" : "text-green-600")}>
+                          {rec.type === "USE" ? "-" : "+"}{rec.quantity}
+                        </td>
+                        <td className="text-sm text-muted-foreground">{rec.recordedBy?.name || "—"}</td>
+                        <td className="text-xs text-muted-foreground max-w-32 truncate">{rec.description || "—"}</td>
+                      </motion.tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Usage / Restock Modal */}
+      <AnimatePresence>
+        {usageModalOpen && (
+          <ProjectUsageModal
+            type={usageType}
+            projectId={project.id}
+            onClose={() => setUsageModalOpen(false)}
+            onSuccess={() => {
+              setUsageModalOpen(false);
+              refetchUsage();
+              queryClient.invalidateQueries({ queryKey: ["inventory"] });
+              toast.success(usageType === "USE" ? "Usage recorded!" : "Restock recorded!");
+            }}
+          />
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
+
+// ── Project Usage/Restock Modal ───────────────────────────────────────────────
+function ProjectUsageModal({ type, projectId, onClose, onSuccess }: {
+  type: "USE" | "RESTOCK"; projectId: string; onClose: () => void; onSuccess: () => void;
+}) {
+  const [search, setSearch] = useState("");
+  const [suggestions, setSuggestions] = useState<any[]>([]);
+  const [selectedItem, setSelectedItem] = useState<any>(null);
+  const [loading, setLoading] = useState(false);
+  const debouncedSearch = useDebounce(search, 300);
+  const { register, handleSubmit, setValue, watch, formState: { errors } } = useForm({
+    defaultValues: { itemId: "", quantity: 1, description: "", usedDate: new Date().toISOString().split("T")[0] },
+  });
+  const quantity = Number(watch("quantity")) || 0;
+  const isUse = type === "USE";
+
+  const searchItems = async (q: string) => {
+    if (q.length < 2) { setSuggestions([]); return; }
+    const r = await fetch(`/api/inventory?q=${encodeURIComponent(q)}&limit=8`);
+    const d = await r.json();
+    setSuggestions(d.items || []);
+  };
+
+  const onSubmit = async (data: any) => {
+    if (!data.itemId) { toast.error("Please select an item"); return; }
+    setLoading(true);
+    try {
+      const res = await fetch("/api/inventory/usage", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...data, type, projectId }),
+      });
+      if (!res.ok) { const e = await res.json(); throw new Error(e.error); }
+      onSuccess();
+    } catch (e: any) { toast.error(e.message); }
+    finally { setLoading(false); }
+  };
+
+  const remaining = selectedItem
+    ? isUse ? selectedItem.currentQuantity - quantity : selectedItem.currentQuantity + quantity
+    : null;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4">
+      <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+        className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onClose} />
+      <motion.div initial={{ opacity: 0, y: 40 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 20 }}
+        className="relative bg-card rounded-3xl shadow-2xl w-full max-w-md">
+        <div className="px-6 pt-6 pb-4 border-b border-border flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className={cn("w-9 h-9 rounded-xl flex items-center justify-center", isUse ? "bg-orange-500" : "bg-green-500")}>
+              {isUse ? <TrendingDown className="w-4 h-4 text-white" /> : <TrendingUp className="w-4 h-4 text-white" />}
+            </div>
+            <div>
+              <h2 className="font-display font-bold">{isUse ? "Record Usage" : "Restock Item"}</h2>
+              <p className="text-xs text-muted-foreground">For this project</p>
+            </div>
+          </div>
+          <button onClick={onClose} className="p-2 hover:bg-muted rounded-xl"><X className="w-4 h-4" /></button>
+        </div>
+        <form onSubmit={handleSubmit(onSubmit)} className="p-6 space-y-4">
+          {/* Item search */}
+          <div>
+            <label className="text-sm font-medium mb-1.5 block">Item *</label>
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
+              <input
+                value={search}
+                onChange={e => { setSearch(e.target.value); searchItems(e.target.value); setSelectedItem(null); setValue("itemId", ""); }}
+                placeholder="Search inventory item..."
+                className="input-styled pl-10"
+                autoComplete="off"
+              />
+              {suggestions.length > 0 && (
+                <div className="absolute top-full left-0 right-0 z-10 bg-card border border-border rounded-xl shadow-xl mt-1 overflow-hidden max-h-48 overflow-y-auto">
+                  {suggestions.map((s: any) => {
+                    const isLow = s.currentQuantity <= s.minimumQuantity && s.minimumQuantity > 0;
+                    return (
+                      <button key={s.id} type="button"
+                        onClick={() => { setSelectedItem(s); setSearch(s.name); setValue("itemId", s.id); setSuggestions([]); }}
+                        className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-muted text-left text-sm transition-colors">
+                        <Package className="w-3.5 h-3.5 text-muted-foreground flex-shrink-0" />
+                        <span className="flex-1 font-medium">{s.name}</span>
+                        <div className="text-right flex-shrink-0">
+                          <p className={cn("text-xs font-semibold", isLow ? "text-red-500" : "text-green-600")}>
+                            {s.currentQuantity} {s.unit}
+                          </p>
+                          {isLow && <p className="text-[9px] text-red-500 flex items-center gap-0.5"><AlertTriangle className="w-2 h-2" />Low</p>}
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+            {selectedItem && (
+              <div className="mt-2 p-2.5 bg-muted/50 rounded-xl text-sm flex items-center justify-between">
+                <span>Current stock: <strong>{selectedItem.currentQuantity} {selectedItem.unit}</strong></span>
+                {isUse && selectedItem.currentQuantity <= 0 && <AlertTriangle className="w-4 h-4 text-red-500" />}
+              </div>
+            )}
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="text-sm font-medium mb-1.5 block">Quantity *</label>
+              <input {...register("quantity", { valueAsNumber: true, required: true, min: 0.01 })}
+                type="number" min="0.01" step="any" className="input-styled" />
+            </div>
+            <div>
+              <label className="text-sm font-medium mb-1.5 block">Date</label>
+              <input {...register("usedDate")} type="date" className="input-styled" />
+            </div>
+          </div>
+
+          {selectedItem && quantity > 0 && remaining !== null && (
+            <div className={cn("p-3 rounded-xl text-sm font-medium flex items-center justify-between",
+              isUse && remaining < 0 ? "bg-red-50 dark:bg-red-950/20 text-red-600 border border-red-200 dark:border-red-800" :
+              isUse && remaining <= selectedItem.minimumQuantity ? "bg-amber-50 dark:bg-amber-950/20 text-amber-700 border border-amber-200" :
+              "bg-green-50 dark:bg-green-950/20 text-green-700 border border-green-200")}>
+              <span>Stock after: <strong>{remaining} {selectedItem?.unit}</strong></span>
+              {isUse && remaining < 0 && <span className="text-xs">Insufficient stock!</span>}
+              {isUse && remaining >= 0 && remaining <= selectedItem.minimumQuantity && (
+                <span className="text-xs flex items-center gap-1"><AlertTriangle className="w-3 h-3" /> Will be low</span>
+              )}
+            </div>
+          )}
+
+          <div>
+            <label className="text-sm font-medium mb-1.5 block">Notes</label>
+            <textarea {...register("description")} rows={2}
+              placeholder={isUse ? "What was this used for?" : "What was restocked and from where?"}
+              className="input-styled resize-none" />
+          </div>
+
+          <div className="flex gap-3 pt-1">
+            <button type="button" onClick={onClose} className="flex-1 py-3 rounded-xl border border-border text-sm font-medium hover:bg-muted">Cancel</button>
+            <motion.button type="submit" disabled={loading} whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}
+              className={cn("flex-1 py-3 rounded-xl text-sm font-semibold text-white flex items-center justify-center gap-2",
+                isUse ? "bg-orange-500 hover:bg-orange-600" : "bg-green-500 hover:bg-green-600")}>
+              {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : isUse ? <TrendingDown className="w-4 h-4" /> : <TrendingUp className="w-4 h-4" />}
+              {loading ? "Saving..." : isUse ? "Record Usage" : "Confirm Restock"}
+            </motion.button>
+          </div>
+        </form>
       </motion.div>
     </div>
   );
