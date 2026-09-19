@@ -270,34 +270,79 @@ export function ProjectDetailContent({ project, session, totalReceived, totalSpe
 
             {activeTab === "expenses" && (
               <div className="space-y-4">
+                {/* Quick add buttons for site managers */}
+                {(isManager || isAdmin) && (
+                  <div className="flex gap-2 flex-wrap">
+                    <Link href="/dashboard/finances/expenses" className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold bg-gradient-brand text-white shadow-brand hover:shadow-brand-lg transition-all">
+                      <Plus className="w-3.5 h-3.5" /> Add Utility / Charge / Other Expense
+                    </Link>
+                    <Link href="/dashboard/finances/received" className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold bg-green-50 dark:bg-green-950/20 text-green-700 dark:text-green-400 border border-green-200 dark:border-green-800 hover:bg-green-100 transition-all">
+                      <TrendingUp className="w-3.5 h-3.5" /> Record Money Received
+                    </Link>
+                  </div>
+                )}
+
                 {/* Utilities */}
                 <div className="bg-card border border-border rounded-2xl overflow-hidden">
                   <div className="px-4 py-3 border-b border-border flex items-center gap-2">
-                    <Zap className="w-4 h-4 text-amber-500" /><h3 className="font-semibold text-sm">Utilities</h3>
-                    <span className="ml-auto text-xs text-muted-foreground">{formatCurrency(project.utilities?.reduce((s: number, u: any) => s + u.amount, 0) || 0)}</span>
+                    <Zap className="w-4 h-4 text-amber-500" />
+                    <h3 className="font-semibold text-sm">Utilities</h3>
+                    <span className="ml-auto text-xs font-bold text-amber-600">{formatCurrency(project.utilities?.reduce((s: number, u: any) => s + u.amount, 0) || 0)}</span>
                   </div>
                   <div className="divide-y divide-border">
-                    {project.utilities?.length === 0 ? <p className="text-xs text-muted-foreground text-center py-4">None recorded</p> :
-                      project.utilities?.map((u: any) => (
+                    {!project.utilities?.length
+                      ? <p className="text-xs text-muted-foreground text-center py-4">None recorded yet</p>
+                      : project.utilities.map((u: any) => (
                         <div key={u.id} className="flex justify-between px-4 py-2.5 text-sm hover:bg-muted/30">
-                          <div><p className="font-medium">{u.name}</p><p className="text-xs text-muted-foreground">{formatDate(u.usageDate)}</p></div>
-                          <p className="font-semibold">{formatCurrency(u.amount)}</p>
+                          <div>
+                            <p className="font-medium">{u.name}</p>
+                            <p className="text-xs text-muted-foreground">{formatDate(u.usageDate)} • {u.category} • {u.paymentMethod?.replace(/_/g," ")}</p>
+                          </div>
+                          <p className="font-bold">{formatCurrency(u.amount)}</p>
                         </div>
                       ))}
                   </div>
                 </div>
-                {/* Charges */}
+
+                {/* Site Charges */}
                 <div className="bg-card border border-border rounded-2xl overflow-hidden">
                   <div className="px-4 py-3 border-b border-border flex items-center gap-2">
-                    <AlertCircle className="w-4 h-4 text-orange-500" /><h3 className="font-semibold text-sm">Site Charges</h3>
-                    <span className="ml-auto text-xs text-muted-foreground">{formatCurrency(project.charges?.reduce((s: number, c: any) => s + c.amount, 0) || 0)}</span>
+                    <AlertCircle className="w-4 h-4 text-orange-500" />
+                    <h3 className="font-semibold text-sm">Site Charges</h3>
+                    <span className="ml-auto text-xs font-bold text-orange-600">{formatCurrency(project.charges?.reduce((s: number, c: any) => s + c.amount, 0) || 0)}</span>
                   </div>
                   <div className="divide-y divide-border">
-                    {project.charges?.length === 0 ? <p className="text-xs text-muted-foreground text-center py-4">None recorded</p> :
-                      project.charges?.map((c: any) => (
+                    {!project.charges?.length
+                      ? <p className="text-xs text-muted-foreground text-center py-4">None recorded yet</p>
+                      : project.charges.map((c: any) => (
                         <div key={c.id} className="flex justify-between px-4 py-2.5 text-sm hover:bg-muted/30">
-                          <div><p className="font-medium">{c.name}</p><p className="text-xs text-muted-foreground">{formatDate(c.chargeDate)}</p></div>
-                          <p className="font-semibold">{formatCurrency(c.amount)}</p>
+                          <div>
+                            <p className="font-medium">{c.name}</p>
+                            <p className="text-xs text-muted-foreground">{formatDate(c.chargeDate)} • {c.category}</p>
+                          </div>
+                          <p className="font-bold">{formatCurrency(c.amount)}</p>
+                        </div>
+                      ))}
+                  </div>
+                </div>
+
+                {/* Other Expenses */}
+                <div className="bg-card border border-border rounded-2xl overflow-hidden">
+                  <div className="px-4 py-3 border-b border-border flex items-center gap-2">
+                    <ExternalLink className="w-4 h-4 text-purple-500" />
+                    <h3 className="font-semibold text-sm">Other Expenses</h3>
+                    <span className="ml-auto text-xs font-bold text-purple-600">{formatCurrency(project.otherExpenses?.reduce((s: number, o: any) => s + o.amount, 0) || 0)}</span>
+                  </div>
+                  <div className="divide-y divide-border">
+                    {!project.otherExpenses?.length
+                      ? <p className="text-xs text-muted-foreground text-center py-4">None recorded yet</p>
+                      : project.otherExpenses.map((o: any) => (
+                        <div key={o.id} className="flex justify-between px-4 py-2.5 text-sm hover:bg-muted/30">
+                          <div>
+                            <p className="font-medium">{o.name}</p>
+                            <p className="text-xs text-muted-foreground">{formatDate(o.expenseDate)} • {o.category}</p>
+                          </div>
+                          <p className="font-bold">{formatCurrency(o.amount)}</p>
                         </div>
                       ))}
                   </div>
