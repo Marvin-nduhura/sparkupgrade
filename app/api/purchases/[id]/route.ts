@@ -4,7 +4,7 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { handleApiError, requireAuth } from "@/lib/errors";
 import { createAuditLog } from "@/lib/audit";
-import { isPast24Hours } from "@/lib/utils";
+import { assertEditWindow } from "@/lib/access";
 
 export async function GET(req: NextRequest, { params }: { params: { id: string } }) {
   try {
@@ -50,14 +50,8 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     });
     if (!purchase) return NextResponse.json({ error: "Purchase not found" }, { status: 404 });
 
-    // 24-hour edit lock for site managers (unless admin)
     if (session!.user.role === "SITE_MANAGER") {
-      if (isPast24Hours(purchase.createdAt)) {
-        return NextResponse.json(
-          { error: "Edit window has expired. Purchases can only be edited within 24 hours. Contact admin for changes." },
-          { status: 403 }
-        );
-      }
+      await assertEditWindow(session, purchase.createdAt);
       if (purchase.purchasedById !== session!.user.id) {
         return NextResponse.json({ error: "You can only edit your own purchases." }, { status: 403 });
       }
@@ -92,11 +86,7 @@ export async function DELETE(req: NextRequest, { params }: { params: { id: strin
     });
     if (!purchase) return NextResponse.json({ error: "Purchase not found" }, { status: 404 });
 
-    if (session!.user.role === "SITE_MANAGER") {
-      if (isPast24Hours(purchase.createdAt)) {
-        return NextResponse.json({ error: "Cannot delete. 24-hour edit window has expired." }, { status: 403 });
-      }
-    }
+    await assertEditWindow(session, purchase.createdAt);
 
     // Reverse inventory quantities
     const purchaseItems = await prisma.purchaseItem.findMany({

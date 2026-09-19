@@ -55,6 +55,7 @@ export default function RequestsPage() {
   const pagination = data?.pagination;
   const canCreate = role === "SITE_MANAGER" || role === "SYSTEM_ADMIN";
   const canReview = role === "SYSTEM_ADMIN" || role === "ACCOUNTANT";
+  const canEdit = role === "SYSTEM_ADMIN" || role === "ACCOUNTANT"; // can edit item prices
 
   const statusIcons: Record<string, React.ElementType> = { PENDING: Clock, APPROVED: CheckCircle2, REJECTED: AlertCircle, REVIEWED: Eye };
 
@@ -120,6 +121,11 @@ export default function RequestsPage() {
                   <button onClick={() => setViewRequest(req)} className="text-xs px-3 py-1.5 bg-muted hover:bg-muted/80 rounded-lg flex items-center gap-1 transition-colors">
                     <Eye className="w-3 h-3" />View
                   </button>
+                  {canEdit && req.status === "PENDING" && (
+                    <button onClick={() => { setViewRequest({...req, _editMode: true}); }} className="text-xs px-3 py-1.5 bg-blue-50 dark:bg-blue-950/20 text-blue-600 hover:bg-blue-100 rounded-lg flex items-center gap-1 transition-colors">
+                      <Edit className="w-3 h-3" />Edit Prices
+                    </button>
+                  )}
                   {canReview && req.status === "PENDING" && (
                     <>
                       <button onClick={() => reviewMutation.mutate({ id: req.id, status: "APPROVED" })} className="text-xs px-3 py-1.5 bg-green-50 dark:bg-green-950/20 text-green-600 hover:bg-green-100 rounded-lg flex items-center gap-1 transition-colors">

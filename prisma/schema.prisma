@@ -100,6 +100,9 @@ model User {
   googleId          String?   @unique
   lastLogin         DateTime?
   passwordChangedAt DateTime?
+  lastLatitude      Float?
+  lastLongitude     Float?
+  lastLocationAt    DateTime?
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
 

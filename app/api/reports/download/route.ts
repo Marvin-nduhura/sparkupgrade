@@ -3,25 +3,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { handleApiError } from "@/lib/errors";
-import {
-  startOfMonth, endOfMonth, startOfWeek, endOfWeek,
-  startOfDay, endOfDay, startOfYear, endOfYear,
-  format, parseISO,
-} from "date-fns";
-
-type DateRange = { start: Date; end: Date };
-
-function getPeriodDates(period: string, startDate?: string, endDate?: string): DateRange {
-  const now = new Date();
-  if (period === "day")    return { start: startOfDay(now), end: endOfDay(now) };
-  if (period === "week")   return { start: startOfWeek(now), end: endOfWeek(now) };
-  if (period === "year")   return { start: startOfYear(now), end: endOfYear(now) };
-  if (period === "custom") return {
-    start: startDate ? startOfDay(parseISO(startDate)) : startOfMonth(now),
-    end:   endDate   ? endOfDay(parseISO(endDate))     : endOfMonth(now),
-  };
-  return { start: startOfMonth(now), end: endOfMonth(now) };
-}
+import { format } from "date-fns";
+import { getPeriodDates } from "@/lib/dates";
 
 export async function GET(req: NextRequest) {
   try {
@@ -51,12 +34,19 @@ export async function GET(req: NextRequest) {
 
     const projects = await prisma.project.findMany({
       where: projectWhere,
-      select: { id: true, name: true, location: true },
+      select: {
+        id: true, name: true, location: true,
+        assignments: {
+          orderBy: { assignedAt: "desc" },
+          include: { user: { select: { name: true } } },
+        },
+      },
     });
     const ids = projects.map((p) => p.id);
     const dateWhere = { gte: start, lte: end };
+    const before = { lt: start };
 
-    const [received, purchases, utilities, charges] = await Promise.all([
+    const [received, purchases, utilities, charges, otherExpenses, officeExpenses, recvBefore, purchBefore, utilBefore, chargeBefore, otherBefore, officeBefore] = await Promise.all([
       prisma.moneyReceived.findMany({
         where: { projectId: { in: ids }, receivedDate: dateWhere },
         include: { project: { select: { name: true } } },
@@ -67,7 +57,7 @@ export async function GET(req: NextRequest) {
         include: {
           project: { select: { name: true } },
           items: { include: { item: { select: { name: true } } } },
-          installments: true,
+          installments: { orderBy: { paymentDate: "asc" } },
         },
         orderBy: { purchaseDate: "desc" },
       }),
@@ -79,19 +69,37 @@ export async function GET(req: NextRequest) {
         where: { projectId: { in: ids }, chargeDate: dateWhere },
         include: { project: { select: { name: true } } },
       }),
+      prisma.otherExpense.findMany({
+        where: { projectId: { in: ids }, expenseDate: dateWhere },
+        include: { project: { select: { name: true } } },
+      }),
+      prisma.officeExpense.findMany({ where: { expenseDate: dateWhere } }),
+      prisma.moneyReceived.aggregate({ where: { projectId: { in: ids }, receivedDate: before }, _sum: { amount: true } }),
+      prisma.purchase.aggregate({ where: { projectId: { in: ids }, purchaseDate: before }, _sum: { totalAmount: true } }),
+      prisma.utility.aggregate({ where: { projectId: { in: ids }, usageDate: before }, _sum: { amount: true } }),
+      prisma.siteCharge.aggregate({ where: { projectId: { in: ids }, chargeDate: before }, _sum: { amount: true } }),
+      prisma.otherExpense.aggregate({ where: { projectId: { in: ids }, expenseDate: before }, _sum: { amount: true } }),
+      prisma.officeExpense.aggregate({ where: { expenseDate: before }, _sum: { amount: true } }),
     ]);
 
     const totalReceived = received.reduce((s, r) => s + r.amount, 0);
     const totalSpent =
       purchases.reduce((s, p) => s + p.totalAmount, 0) +
       utilities.reduce((s, u) => s + u.amount, 0) +
-      charges.reduce((s, c) => s + c.amount, 0);
-    const balance = totalReceived - totalSpent;
+      charges.reduce((s, c) => s + c.amount, 0) +
+      otherExpenses.reduce((s, o) => s + o.amount, 0) +
+      officeExpenses.reduce((s, o) => s + o.amount, 0);
+    const bbf = (recvBefore._sum.amount || 0) - ((purchBefore._sum.totalAmount || 0) + (utilBefore._sum.amount || 0) + (chargeBefore._sum.amount || 0) + (otherBefore._sum.amount || 0) + (officeBefore._sum.amount || 0));
+    const balance = bbf + totalReceived - totalSpent;
     const company = await prisma.companySettings.findFirst();
+    const reportCtx = {
+      company, received, purchases, utilities, charges, otherExpenses, officeExpenses, projects,
+      totalReceived, totalSpent, bbf, balance, period: { start, end }, generatedBy: session.user.name as string,
+    };
 
     // ── PDF (HTML) ───────────────────────────────────────────────
     if (fmt === "pdf") {
-      const html = buildHtml({ company, received, purchases, utilities, charges, totalReceived, totalSpent, balance, period: { start, end }, generatedBy: session.user.name });
+      const html = buildHtml(reportCtx);
       return new NextResponse(html, {
         headers: {
           "Content-Type": "text/html; charset=utf-8",
@@ -119,9 +127,10 @@ export async function GET(req: NextRequest) {
       // Summary
       const sumHdr = ws.addRow(["SUMMARY"]);
       sumHdr.getCell(1).font = { bold: true };
+      ws.addRow(["Balance Brought Forward (UGX)", bbf]);
       ws.addRow(["Total Received (UGX)", totalReceived]);
       ws.addRow(["Total Spent (UGX)", totalSpent]);
-      ws.addRow(["Net Balance (UGX)", balance]);
+      ws.addRow(["Closing Balance (UGX)", balance]);
       ws.addRow([]);
 
       // Money Received
@@ -159,7 +168,7 @@ export async function GET(req: NextRequest) {
 
     // ── Word (HTML-based .doc) ────────────────────────────────────
     if (fmt === "word") {
-      const doc = buildWordDoc({ company, received, purchases, totalReceived, totalSpent, balance, period: { start, end }, generatedBy: session.user.name });
+      const doc = buildWordDoc(reportCtx);
       return new NextResponse(doc, {
         headers: {
           "Content-Type": "application/msword",
@@ -175,30 +184,19 @@ export async function GET(req: NextRequest) {
 }
 
 // ── HTML report builder ──────────────────────────────────────────────────────
-function buildHtml(ctx: {
-  company: any;
-  received: any[];
-  purchases: any[];
-  utilities: any[];
-  charges: any[];
-  totalReceived: number;
-  totalSpent: number;
-  balance: number;
-  period: { start: Date; end: Date };
-  generatedBy: string;
-}) {
-  const { company, received, purchases, utilities, charges, totalReceived, totalSpent, balance, period, generatedBy } = ctx;
+function buildHtml(ctx: any) {
+  const { company, received, purchases, utilities, charges, otherExpenses, officeExpenses, projects, totalReceived, totalSpent, bbf, balance, period, generatedBy } = ctx;
 
-  const receivedRows = received.map((r) =>
+  const receivedRows = received.map((r: any) =>
     `<tr><td>${format(new Date(r.receivedDate), "dd/MM/yyyy")}</td><td>${r.project.name}</td><td>${r.source}</td><td>${r.paymentMethod}</td><td><strong>${r.amount.toLocaleString()}</strong></td><td>${r.reference || "—"}</td></tr>`
   ).join("") || `<tr><td colspan="6" style="text-align:center;color:#94a3b8;padding:20px">No records for this period</td></tr>`;
 
-  const purchaseRows = purchases.map((p) =>
+  const purchaseRows = purchases.map((p: any) =>
     `<tr><td>${format(new Date(p.purchaseDate), "dd/MM/yyyy")}</td><td>${p.project.name}</td><td>${p.items.map((i: any) => i.item?.name || "").join(", ")}</td><td><strong>${p.totalAmount.toLocaleString()}</strong></td><td style="color:#16a34a">${p.amountPaid.toLocaleString()}</td><td style="color:${p.amountDue > 0 ? "#dc2626" : "#16a34a"}">${p.amountDue.toLocaleString()}</td></tr>`
   ).join("") || `<tr><td colspan="6" style="text-align:center;color:#94a3b8;padding:20px">No purchases for this period</td></tr>`;
 
   const utilRows = utilities.length > 0
-    ? utilities.map((u) => `<tr><td>${format(new Date(u.usageDate), "dd/MM/yyyy")}</td><td>${u.project.name}</td><td>${u.name}</td><td>${u.category}</td><td>${u.amount.toLocaleString()}</td></tr>`).join("")
+    ? utilities.map((u: any) => `<tr><td>${format(new Date(u.usageDate), "dd/MM/yyyy")}</td><td>${u.project.name}</td><td>${u.name}</td><td>${u.category}</td><td>${u.amount.toLocaleString()}</td></tr>`).join("")
     : "";
 
   return `<!DOCTYPE html>

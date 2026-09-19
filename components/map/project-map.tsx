@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
-import { MapContainer, TileLayer, Marker, Popup, useMap } from "react-leaflet";
+import { MapContainer, TileLayer, Marker, Popup, Polyline, useMap } from "react-leaflet";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import { cn, formatCurrency } from "@/lib/utils";
@@ -27,6 +27,12 @@ const selectedIcon = new L.Icon({
   iconSize: [30, 49], iconAnchor: [15, 49], popupAnchor: [1, -34], shadowSize: [41, 41],
 });
 
+const managerIcon = new L.Icon({
+  iconUrl: "https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-blue.png",
+  shadowUrl: "https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-shadow.png",
+  iconSize: [25, 41], iconAnchor: [12, 41], popupAnchor: [1, -34], shadowSize: [41, 41],
+});
+
 function MapController({ projects, selectedId }: { projects: any[]; selectedId: string }) {
   const map = useMap();
   useEffect(() => {
@@ -47,12 +53,15 @@ interface ProjectMapProps {
   projects: any[];
   selectedId: string;
   onSelect: (id: string) => void;
+  managers?: any[];
 }
 
-export default function ProjectMap({ projects, selectedId, onSelect }: ProjectMapProps) {
+export default function ProjectMap({ projects, selectedId, onSelect, managers = [] }: ProjectMapProps) {
   const center: [number, number] = projects.length > 0
     ? [projects[0].latitude, projects[0].longitude]
-    : [0.3476, 32.5825]; // Kampala, Uganda
+    : managers[0]?.lastLatitude
+      ? [managers[0].lastLatitude, managers[0].lastLongitude]
+      : [0.3476, 32.5825]; // Kampala, Uganda
 
   return (
     <MapContainer center={center} zoom={projects.length === 1 ? 14 : 10} style={{ height: "500px", width: "100%" }}>
@@ -93,6 +102,42 @@ export default function ProjectMap({ projects, selectedId, onSelect }: ProjectMa
           </Popup>
         </Marker>
       ))}
+      {managers.map((manager: any) => (
+        manager.lastLatitude && manager.lastLongitude ? (
+          <Marker
+            key={manager.id}
+            position={[manager.lastLatitude, manager.lastLongitude]}
+            icon={managerIcon}
+          >
+            <Popup>
+              <div className="min-w-[180px]">
+                <p className="font-bold text-sm">{manager.name}</p>
+                <p className="text-xs text-gray-500 mt-0.5">Site manager location</p>
+                {manager.lastLocationAt && (
+                  <p className="text-[10px] text-gray-400 mt-1">Updated {new Date(manager.lastLocationAt).toLocaleString()}</p>
+                )}
+                {(manager.managedProjects || []).map((a: any) => (
+                  <p key={a.id} className="text-xs mt-1">Assigned: {a.project?.name}</p>
+                ))}
+              </div>
+            </Popup>
+          </Marker>
+        ) : null
+      ))}
+      {managers.flatMap((manager: any) =>
+        (manager.managedProjects || [])
+          .filter((a: any) => manager.lastLatitude && a.project?.latitude && a.project?.longitude)
+          .map((a: any) => (
+            <Polyline
+              key={`${manager.id}-${a.project.id}`}
+              positions={[
+                [manager.lastLatitude, manager.lastLongitude],
+                [a.project.latitude, a.project.longitude],
+              ]}
+              pathOptions={{ color: "#2563eb", weight: 2, dashArray: "6 6" }}
+            />
+          ))
+      )}
     </MapContainer>
   );
 }

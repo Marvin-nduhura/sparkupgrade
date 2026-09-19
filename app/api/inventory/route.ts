@@ -26,11 +26,7 @@ export async function GET(req: NextRequest) {
       ];
     }
     if (category) where.category = category;
-    if (lowStock) {
-      where.currentQuantity = { lte: prisma.inventoryItem.fields.minimumQuantity };
-    }
-
-    const [items, total] = await Promise.all([
+    const [rawItems, total] = await Promise.all([
       prisma.inventoryItem.findMany({
         where,
         skip,
@@ -44,7 +40,10 @@ export async function GET(req: NextRequest) {
       prisma.inventoryItem.count({ where }),
     ]);
 
-    // Check low stock
+    const items = lowStock
+      ? rawItems.filter((item) => item.currentQuantity <= item.minimumQuantity && item.minimumQuantity > 0)
+      : rawItems;
+
     const lowStockItems = items.filter(
       (item) => item.currentQuantity <= item.minimumQuantity && item.minimumQuantity > 0
     );
@@ -68,11 +67,12 @@ export async function POST(req: NextRequest) {
     const body = await req.json();
     const { name, description, unit, category, minimumQuantity, currentQuantity, unitPrice } = body;
 
-    // Check if item already exists
-    const existing = await prisma.inventoryItem.findUnique({ where: { name } });
+    const existing = await prisma.inventoryItem.findFirst({
+      where: { name: { equals: name, mode: "insensitive" } },
+    });
     if (existing) {
       return NextResponse.json(
-        { error: "Item already exists. Use the existing item.", existingId: existing.id },
+        { error: "Item already exists. Use the existing item instead of creating a duplicate.", existingId: existing.id },
         { status: 409 }
       );
     }

@@ -22,21 +22,34 @@ export default function MapPage() {
     },
   });
 
+  const { data: locationData } = useQuery({
+    queryKey: ["manager-locations"],
+    queryFn: async () => {
+      const res = await fetch("/api/location");
+      if (!res.ok) return { managers: [] };
+      return res.json();
+    },
+  });
+
   const projects = data?.projects || [];
   const projectsWithCoords = projects.filter((p: any) => p.latitude && p.longitude);
+  const managers = locationData?.managers || [];
 
   return (
     <div className="page-container pb-24 md:pb-8">
       <div className="section-header">
         <div>
           <h1 className="text-2xl font-display font-bold">Site Map</h1>
-          <p className="text-sm text-muted-foreground">{projectsWithCoords.length} projects with location data</p>
+          <p className="text-sm text-muted-foreground">
+            {projectsWithCoords.length} projects with GPS
+            {managers.length > 0 ? ` • ${managers.length} managers sharing location` : ""}
+          </p>
         </div>
       </div>
 
       {/* Map */}
       <div className="bg-card border border-border rounded-2xl overflow-hidden shadow-card mb-4">
-        <ProjectMap projects={projectsWithCoords} selectedId={selectedProject} onSelect={setSelectedProject} />
+        <ProjectMap projects={projectsWithCoords} selectedId={selectedProject} onSelect={setSelectedProject} managers={managers} />
       </div>
 
       {/* Project list with location */}

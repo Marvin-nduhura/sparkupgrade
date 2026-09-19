@@ -19,56 +19,61 @@ import { cn, getInitials, getAvatarColor, getRoleLabel } from "@/lib/utils";
 import type { Session } from "next-auth";
 import { NotificationsDropdown } from "@/components/notifications/notifications-dropdown";
 import { GlobalSearch } from "@/components/ui/global-search";
+import { LocationTracker } from "@/components/location/location-tracker";
 import { UserRole } from "@prisma/client";
+
+type AdminPanel = "admin" | "site";
 
 interface NavItem {
   label: string;
   href: string;
   icon: React.ElementType;
   roles: UserRole[];
+  panel?: AdminPanel | "both";
   children?: NavItem[];
 }
 
 const navItems: NavItem[] = [
-  { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard, roles: ["SYSTEM_ADMIN", "SITE_MANAGER", "ACCOUNTANT"] },
-  { label: "Projects", href: "/dashboard/projects", icon: Building2, roles: ["SYSTEM_ADMIN", "SITE_MANAGER", "ACCOUNTANT"] },
-  { label: "Inventory", href: "/dashboard/inventory", icon: Package, roles: ["SYSTEM_ADMIN", "SITE_MANAGER", "ACCOUNTANT"] },
-  { label: "Purchases", href: "/dashboard/purchases", icon: Receipt, roles: ["SYSTEM_ADMIN", "SITE_MANAGER", "ACCOUNTANT"] },
+  { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard, roles: ["SYSTEM_ADMIN", "SITE_MANAGER", "ACCOUNTANT"], panel: "both" },
+  { label: "Projects", href: "/dashboard/projects", icon: Building2, roles: ["SYSTEM_ADMIN", "SITE_MANAGER", "ACCOUNTANT"], panel: "site" },
+  { label: "Inventory", href: "/dashboard/inventory", icon: Package, roles: ["SYSTEM_ADMIN", "SITE_MANAGER", "ACCOUNTANT"], panel: "site" },
+  { label: "Purchases", href: "/dashboard/purchases", icon: Receipt, roles: ["SYSTEM_ADMIN", "SITE_MANAGER", "ACCOUNTANT"], panel: "site" },
 
-  // Site manager financial inputs
-  { label: "Money Received", href: "/dashboard/finances/received", icon: TrendingUp, roles: ["SITE_MANAGER"] },
-  { label: "Site Expenses", href: "/dashboard/finances/expenses", icon: Zap, roles: ["SITE_MANAGER"] },
+  { label: "Money Received", href: "/dashboard/finances/received", icon: TrendingUp, roles: ["SITE_MANAGER"], panel: "site" },
+  { label: "Site Expenses", href: "/dashboard/finances/expenses", icon: Zap, roles: ["SITE_MANAGER"], panel: "site" },
 
-  // Accountant / Admin finances
   {
-    label: "Finances", href: "/dashboard/finances", icon: DollarSign, roles: ["SYSTEM_ADMIN", "ACCOUNTANT"],
+    label: "Finances", href: "/dashboard/finances", icon: DollarSign, roles: ["SYSTEM_ADMIN", "ACCOUNTANT"], panel: "site",
     children: [
-      { label: "Money Received", href: "/dashboard/finances/received", icon: TrendingUp, roles: ["SYSTEM_ADMIN", "ACCOUNTANT"] },
-      { label: "Site Expenses", href: "/dashboard/finances/expenses", icon: Zap, roles: ["SYSTEM_ADMIN", "ACCOUNTANT"] },
-      { label: "Office Expenses", href: "/dashboard/finances/office", icon: Wrench, roles: ["SYSTEM_ADMIN", "ACCOUNTANT"] },
-      { label: "Transfers", href: "/dashboard/finances/transfers", icon: Send, roles: ["SYSTEM_ADMIN", "ACCOUNTANT"] },
+      { label: "Money Received", href: "/dashboard/finances/received", icon: TrendingUp, roles: ["SYSTEM_ADMIN", "ACCOUNTANT"], panel: "site" },
+      { label: "Site Expenses", href: "/dashboard/finances/expenses", icon: Zap, roles: ["SYSTEM_ADMIN", "ACCOUNTANT"], panel: "site" },
+      { label: "Office Expenses", href: "/dashboard/finances/office", icon: Wrench, roles: ["SYSTEM_ADMIN", "ACCOUNTANT"], panel: "site" },
+      { label: "Transfers", href: "/dashboard/finances/transfers", icon: Send, roles: ["SYSTEM_ADMIN", "ACCOUNTANT"], panel: "both" },
     ],
   },
 
-  { label: "Requests", href: "/dashboard/requests", icon: ClipboardList, roles: ["SYSTEM_ADMIN", "SITE_MANAGER", "ACCOUNTANT"] },
+  { label: "Requests", href: "/dashboard/requests", icon: ClipboardList, roles: ["SYSTEM_ADMIN", "SITE_MANAGER", "ACCOUNTANT"], panel: "site" },
 
-  // Reports — admin & accountant
   {
-    label: "Reports", href: "/dashboard/reports", icon: FileText, roles: ["SYSTEM_ADMIN", "ACCOUNTANT"],
+    label: "Reports", href: "/dashboard/reports", icon: FileText, roles: ["SYSTEM_ADMIN", "ACCOUNTANT"], panel: "site",
     children: [
-      { label: "Project Reports", href: "/dashboard/reports/projects", icon: BarChart3, roles: ["SYSTEM_ADMIN", "ACCOUNTANT"] },
-      { label: "Financial Reports", href: "/dashboard/reports/financial", icon: TrendingUp, roles: ["SYSTEM_ADMIN", "ACCOUNTANT"] },
-      { label: "Balance Sheet", href: "/dashboard/reports/balance-sheet", icon: BookOpen, roles: ["SYSTEM_ADMIN", "ACCOUNTANT"] },
+      { label: "Project Reports", href: "/dashboard/reports/projects", icon: BarChart3, roles: ["SYSTEM_ADMIN", "ACCOUNTANT"], panel: "site" },
+      { label: "Financial Reports", href: "/dashboard/reports/financial", icon: TrendingUp, roles: ["SYSTEM_ADMIN", "ACCOUNTANT"], panel: "site" },
+      { label: "Balance Sheet", href: "/dashboard/reports/balance-sheet", icon: BookOpen, roles: ["SYSTEM_ADMIN", "ACCOUNTANT"], panel: "site" },
     ],
   },
 
-  { label: "Analytics", href: "/dashboard/analytics", icon: BarChart3, roles: ["SYSTEM_ADMIN", "ACCOUNTANT"] },
-  { label: "Site Media", href: "/dashboard/media", icon: Camera, roles: ["SYSTEM_ADMIN", "SITE_MANAGER"] },
-  { label: "Map View", href: "/dashboard/map", icon: Map, roles: ["SYSTEM_ADMIN", "SITE_MANAGER"] },
-  { label: "Notifications", href: "/dashboard/notifications", icon: Bell, roles: ["SYSTEM_ADMIN", "SITE_MANAGER", "ACCOUNTANT"] },
-  { label: "User Management", href: "/dashboard/admin/users", icon: Users, roles: ["SYSTEM_ADMIN"] },
-  { label: "Audit Logs", href: "/dashboard/admin/audit-logs", icon: Shield, roles: ["SYSTEM_ADMIN"] },
-  { label: "Settings", href: "/dashboard/settings", icon: Settings, roles: ["SYSTEM_ADMIN", "SITE_MANAGER", "ACCOUNTANT"] },
+  { label: "My Reports", href: "/dashboard/reports/site", icon: FileText, roles: ["SITE_MANAGER"], panel: "site" },
+
+  { label: "Analytics", href: "/dashboard/analytics", icon: BarChart3, roles: ["SYSTEM_ADMIN", "ACCOUNTANT"], panel: "site" },
+  { label: "Site Analytics", href: "/dashboard/analytics", icon: BarChart3, roles: ["SITE_MANAGER"], panel: "site" },
+  { label: "All Receipts", href: "/dashboard/receipts", icon: Receipt, roles: ["SYSTEM_ADMIN", "ACCOUNTANT"], panel: "site" },
+  { label: "Site Media", href: "/dashboard/media", icon: Camera, roles: ["SYSTEM_ADMIN", "SITE_MANAGER", "ACCOUNTANT"], panel: "site" },
+  { label: "Map View", href: "/dashboard/map", icon: Map, roles: ["SYSTEM_ADMIN", "SITE_MANAGER", "ACCOUNTANT"], panel: "both" },
+  { label: "Notifications", href: "/dashboard/notifications", icon: Bell, roles: ["SYSTEM_ADMIN", "SITE_MANAGER", "ACCOUNTANT"], panel: "both" },
+  { label: "User Management", href: "/dashboard/admin/users", icon: Users, roles: ["SYSTEM_ADMIN"], panel: "admin" },
+  { label: "Audit Logs", href: "/dashboard/admin/audit-logs", icon: Shield, roles: ["SYSTEM_ADMIN"], panel: "admin" },
+  { label: "Settings", href: "/dashboard/settings", icon: Settings, roles: ["SYSTEM_ADMIN", "SITE_MANAGER", "ACCOUNTANT"], panel: "both" },
 ];
 
 // Bottom nav per role
@@ -77,7 +82,7 @@ const bottomNavByRole: Record<string, { href: string; icon: React.ElementType; l
     { href: "/dashboard", icon: Home, label: "Home" },
     { href: "/dashboard/projects", icon: Building2, label: "Projects" },
     { href: "/dashboard/finances/expenses", icon: Zap, label: "Expenses" },
-    { href: "/dashboard/requests", icon: ClipboardList, label: "Requests" },
+    { href: "/dashboard/reports/site", icon: FileText, label: "Reports" },
     { href: "/dashboard/settings", icon: Settings, label: "Settings" },
   ],
   ACCOUNTANT: [
@@ -100,11 +105,35 @@ export function DashboardShell({ children, session }: { children: React.ReactNod
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [expandedItems, setExpandedItems] = useState<string[]>([]);
   const [searchOpen, setSearchOpen] = useState(false);
+  const [panel, setPanel] = useState<AdminPanel>("site");
   const pathname = usePathname();
   const { theme, setTheme } = useTheme();
   const userRole = session.user.role as UserRole;
 
-  const filteredNav = navItems.filter(item => item.roles.includes(userRole));
+  useEffect(() => {
+    const saved = window.localStorage.getItem("buildspark-panel") as AdminPanel | null;
+    if (saved === "admin" || saved === "site") setPanel(saved);
+    fetch("/api/profile")
+      .then((r) => r.json())
+      .then((profile) => {
+        if (profile?.colorScheme && profile.colorScheme !== "orange") {
+          document.documentElement.classList.add(`theme-${profile.colorScheme}`);
+        }
+      })
+      .catch(() => {});
+  }, []);
+
+  const switchPanel = (next: AdminPanel) => {
+    setPanel(next);
+    window.localStorage.setItem("buildspark-panel", next);
+  };
+
+  const filteredNav = navItems.filter((item) => {
+    if (!item.roles.includes(userRole)) return false;
+    if (userRole !== "SYSTEM_ADMIN") return true;
+    const itemPanel = item.panel || "both";
+    return itemPanel === "both" || itemPanel === panel;
+  });
   const bottomNav = bottomNavByRole[userRole] || bottomNavByRole.SYSTEM_ADMIN;
 
   const toggleExpand = (href: string) => {
@@ -127,6 +156,7 @@ export function DashboardShell({ children, session }: { children: React.ReactNod
 
   return (
     <div className="flex h-screen bg-background overflow-hidden">
+      <LocationTracker enabled={userRole === "SITE_MANAGER"} />
       {/* Overlay */}
       <AnimatePresence>
         {sidebarOpen && (
@@ -171,6 +201,22 @@ export function DashboardShell({ children, session }: { children: React.ReactNod
               <p className="text-xs text-muted-foreground">{getRoleLabel(userRole)}</p>
             </div>
           </div>
+          {userRole === "SYSTEM_ADMIN" && (
+            <div className="mt-3 grid grid-cols-2 gap-1 bg-muted p-1 rounded-xl">
+              <button
+                onClick={() => switchPanel("admin")}
+                className={cn("px-2 py-1.5 rounded-lg text-[11px] font-semibold transition-all", panel === "admin" ? "bg-background text-primary shadow-sm" : "text-muted-foreground hover:text-foreground")}
+              >
+                Admin Panel
+              </button>
+              <button
+                onClick={() => switchPanel("site")}
+                className={cn("px-2 py-1.5 rounded-lg text-[11px] font-semibold transition-all", panel === "site" ? "bg-background text-primary shadow-sm" : "text-muted-foreground hover:text-foreground")}
+              >
+                Site Mgmt
+              </button>
+            </div>
+          )}
         </div>
 
         {/* Nav */}
@@ -265,7 +311,10 @@ function SidebarNavItem({ item, isActive, expanded, onToggle, userRole }: {
   onToggle: (h: string) => void; userRole: UserRole;
 }) {
   const active = isActive(item.href);
-  const filteredChildren = item.children?.filter(c => c.roles.includes(userRole));
+  const filteredChildren = item.children?.filter((c) => {
+    if (!c.roles.includes(userRole)) return false;
+    return true;
+  });
 
   if (filteredChildren?.length) {
     return (

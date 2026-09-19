@@ -23,6 +23,7 @@ const ALL_PERMISSIONS = [
   "manage_requests", "approve_requests",
   "view_audit_logs", "manage_users",
   "send_notifications", "view_analytics",
+  "bypass_edit_lock",
 ];
 
 export function UserDetailContent({ user, auditLogs }: { user: any; auditLogs: any[] }) {

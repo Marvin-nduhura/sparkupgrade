@@ -6,12 +6,17 @@ import { initiateMobileMoneyPayment, getTransactionStatus } from "@/lib/pesapal"
 import { createAuditLog } from "@/lib/audit";
 import { v4 as uuidv4 } from "uuid";
 import { formatPhoneForApi } from "@/lib/utils";
+import { userHasPermission } from "@/lib/access";
 
 export async function POST(req: NextRequest) {
   try {
     const session = await auth();
-    if (!session?.user || session.user.role !== "SYSTEM_ADMIN") {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 403 });
+    if (!session?.user) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+    const canSend = await userHasPermission(session.user.id, session.user.role, "send_money");
+    if (!canSend) {
+      return NextResponse.json({ error: "You are not permitted to send money. Ask an administrator." }, { status: 403 });
     }
 
     const { toUserId, projectId, amount, description, paymentMethod } = await req.json();

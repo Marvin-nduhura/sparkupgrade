@@ -1,6 +1,19 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
+import { prisma } from "@/lib/prisma";
 
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!);
+async function getGeminiClient() {
+  let apiKey = process.env.GEMINI_API_KEY || "";
+  if (!apiKey) {
+    try {
+      const settings = await prisma.companySettings.findFirst({ select: { geminiKey: true } });
+      apiKey = settings?.geminiKey || "";
+    } catch {
+      apiKey = "";
+    }
+  }
+  if (!apiKey) return null;
+  return new GoogleGenerativeAI(apiKey);
+}
 
 export interface AIReceiptVerification {
   verified: boolean;
@@ -19,6 +32,18 @@ export async function verifyReceipt(
   claimedItems: { name: string; quantity: number; unitPrice: number; totalPrice: number }[]
 ): Promise<AIReceiptVerification> {
   try {
+    const genAI = await getGeminiClient();
+    if (!genAI) {
+      return {
+        verified: false,
+        itemsFound: [],
+        pricesFound: [],
+        totalFound: null,
+        confidence: 0,
+        message: "AI verification is not configured. An administrator can add a Gemini API key.",
+        suggestions: ["Manual verification required"],
+      };
+    }
     const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
 
     const itemsList = claimedItems
@@ -90,6 +115,8 @@ export async function analyzeProjectImage(
   projectName: string
 ): Promise<string> {
   try {
+    const genAI = await getGeminiClient();
+    if (!genAI) return "Image analysis unavailable.";
     const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
 
     const result = await model.generateContent([
@@ -120,6 +147,8 @@ export async function getFinancialAdvice(data: {
   pendingPayments: number;
 }): Promise<string> {
   try {
+    const genAI = await getGeminiClient();
+    if (!genAI) return "Financial analysis unavailable. Configure Gemini AI in company settings.";
     const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
 
     const result = await model.generateContent(

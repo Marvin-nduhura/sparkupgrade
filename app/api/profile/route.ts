@@ -5,6 +5,27 @@ import { prisma } from "@/lib/prisma";
 import { handleApiError } from "@/lib/errors";
 import { saveUploadedFile } from "@/lib/upload";
 import { createAuditLog } from "@/lib/audit";
+import { userHasPermission } from "@/lib/access";
+
+export async function GET() {
+  try {
+    const session = await auth();
+    if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+    const user = await prisma.user.findUnique({
+      where: { id: session.user.id },
+      select: {
+        id: true, name: true, email: true, role: true, phone: true, avatar: true,
+        mtnNumber: true, airtelNumber: true, bankAccount: true, bankName: true,
+        themePreference: true, colorScheme: true, permissions: true,
+      },
+    });
+    const canSendMoney = await userHasPermission(session.user.id, session.user.role, "send_money");
+    return NextResponse.json({ ...user, canSendMoney });
+  } catch (err) {
+    return handleApiError(err);
+  }
+}
 
 export async function PATCH(req: NextRequest) {
   try {

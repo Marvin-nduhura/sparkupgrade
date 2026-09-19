@@ -42,11 +42,7 @@ export async function middleware(req: NextRequest) {
     return NextResponse.redirect(new URL("/dashboard", req.url));
   }
 
-  // Accountant blocked routes
-  const accountantBlocked = ["/dashboard/map", "/dashboard/media"];
-  if (accountantBlocked.some(r => pathname.startsWith(r)) && role === "ACCOUNTANT") {
-    return NextResponse.redirect(new URL("/dashboard", req.url));
-  }
+  // Accountants can view site media for progress photos; map is admin-focused.
 
   return NextResponse.next();
 }
