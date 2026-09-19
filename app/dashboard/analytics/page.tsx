@@ -132,6 +132,7 @@ export default function AnalyticsPage() {
   const isDark = resolvedTheme === "dark";
   const axisColor = isDark ? "#94a3b8" : "#64748b";
   const gridColor = isDark ? "#334155" : "#f1f5f9";
+  const [statusFilter, setStatusFilter] = useState("ALL");
 
   const { data: revenue, isLoading: revLoading } = useQuery({
     queryKey: ["analytics-revenue"],
@@ -155,7 +156,13 @@ export default function AnalyticsPage() {
   });
 
   const s = summary?.data || {};
-  const perProject: any[] = topItems?.perProject || [];
+  const allPerProject: any[] = topItems?.perProject || [];
+  const perProject = statusFilter === "ALL"
+    ? allPerProject
+    : allPerProject.filter((p: any) => {
+        const proj = (projects?.projects || []).find((pr: any) => pr.id === p.projectId);
+        return proj?.status === statusFilter;
+      });
   const maxUsage = topItems?.max || 1;
 
   const statCards = [
@@ -310,18 +317,32 @@ export default function AnalyticsPage() {
       {/* Per-project inventory usage */}
       <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.7 }}
         className="bg-card border border-border rounded-2xl p-5">
-        <div className="flex items-center gap-2 mb-1">
-          <Package className="w-4 h-4 text-primary" />
-          <h3 className="font-display font-semibold">Inventory Usage Per Project</h3>
+        <div className="flex items-center justify-between gap-3 mb-1 flex-wrap">
+          <div className="flex items-center gap-2">
+            <Package className="w-4 h-4 text-primary" />
+            <h3 className="font-display font-semibold">Inventory Usage Per Project</h3>
+          </div>
+          {/* Status filter */}
+          <div className="flex gap-1 bg-muted p-1 rounded-xl">
+            {["ALL", "ACTIVE", "PLANNING", "ON_HOLD", "COMPLETED", "CANCELLED"].map(s => (
+              <button key={s} onClick={() => setStatusFilter(s)}
+                className={cn("px-2.5 py-1 rounded-lg text-[10px] font-semibold whitespace-nowrap transition-all",
+                  statusFilter === s ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground")}>
+                {s === "ALL" ? "All" : s.replace("_", " ")}
+              </button>
+            ))}
+          </div>
         </div>
         <p className="text-xs text-muted-foreground mb-4">
-          Top items used or purchased in each project — click a project to expand
+          Top items used or purchased per project — click to expand
         </p>
 
         {perProject.length === 0 ? (
           <div className="py-10 text-center">
             <Package className="w-12 h-12 mx-auto mb-3 text-muted-foreground opacity-20" />
-            <p className="text-sm text-muted-foreground">No project data available yet</p>
+            <p className="text-sm text-muted-foreground">
+              {statusFilter === "ALL" ? "No project data available yet" : `No ${statusFilter} projects found`}
+            </p>
           </div>
         ) : (
           <div className="space-y-2">

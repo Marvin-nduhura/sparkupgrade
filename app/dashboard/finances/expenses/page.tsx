@@ -5,7 +5,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Zap, AlertCircle, MoreHorizontal, Plus, Search, X,
-  Loader2, ChevronLeft, ChevronRight, Eye, Camera, Upload, Sparkles, AlertTriangle
+  Loader2, ChevronLeft, ChevronRight, Eye, Camera, Upload, Sparkles, AlertTriangle, Edit2, Trash2
 } from "lucide-react";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
@@ -34,6 +34,7 @@ export default function ExpensesPage() {
   const [page, setPage] = useState(1);
   const [createOpen, setCreateOpen] = useState(false);
   const [createType, setCreateType] = useState<"utility" | "charge" | "other">("utility");
+  const [editExpense, setEditExpense] = useState<any>(null);
   const [viewReceipt, setViewReceipt] = useState("");
   const debouncedSearch = useDebounce(search, 300);
   const queryClient = useQueryClient();
@@ -58,7 +59,7 @@ export default function ExpensesPage() {
   const expenses = data?.expenses || [];
   const pagination = data?.pagination;
 
-  const openCreate = (t: "utility" | "charge" | "other") => { setCreateType(t); setCreateOpen(true); };
+  const openCreate = (t: "utility" | "charge" | "other") => { setCreateType(t); setEditExpense(null); setCreateOpen(true); };
 
   return (
     <div className="page-container">
@@ -115,13 +116,13 @@ export default function ExpensesPage() {
               <th className="text-left">Date</th><th className="text-left">Project</th>
               <th className="text-left">Name</th><th className="text-left">Category</th>
               <th className="text-left">Type</th><th className="text-right">Amount</th>
-              <th className="text-center">Receipt</th>
+              <th className="text-center">Receipt</th><th className="text-center">Actions</th>
             </tr></thead>
             <tbody>
               {isLoading ? Array.from({ length: 8 }).map((_, i) => (
-                <tr key={i}><td colSpan={7}><div className="skeleton h-5 m-2 rounded" /></td></tr>
+                <tr key={i}><td colSpan={8}><div className="skeleton h-5 m-2 rounded" /></td></tr>
               )) : expenses.length === 0 ? (
-                <tr><td colSpan={7} className="py-20 text-center">
+                <tr><td colSpan={8} className="py-20 text-center">
                   <Zap className="w-12 h-12 mx-auto mb-3 text-muted-foreground opacity-20" />
                   <p className="text-muted-foreground text-sm mb-4">No expenses recorded yet</p>
                   <div className="flex gap-2 justify-center">
@@ -137,7 +138,7 @@ export default function ExpensesPage() {
                   ? "bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400"
                   : "bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400";
                 return (
-                  <motion.tr key={exp.id} initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: i * 0.03 }} className="hover:bg-muted/20">
+                  <motion.tr key={exp.id} initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: i * 0.03 }} className="hover:bg-muted/20 group">
                     <td className="text-xs text-muted-foreground">{formatDate(exp.usageDate || exp.chargeDate || exp.expenseDate)}</td>
                     <td className="text-sm font-medium">{exp.project?.name || "—"}</td>
                     <td className="text-sm">{exp.name}</td>
@@ -146,15 +147,18 @@ export default function ExpensesPage() {
                     <td className="text-right font-bold">{formatCurrency(exp.amount)}</td>
                     <td className="text-center">
                       {exp.receipt?.fileUrl ? (
-                        <button
-                          onClick={() => setViewReceipt(exp.receipt.fileUrl)}
-                          className="p-1.5 hover:bg-blue-50 dark:hover:bg-blue-950/20 rounded-lg transition-colors mx-auto flex items-center gap-1"
-                        >
+                        <button onClick={() => setViewReceipt(exp.receipt.fileUrl)} className="p-1.5 hover:bg-blue-50 dark:hover:bg-blue-950/20 rounded-lg transition-colors mx-auto flex items-center gap-1">
                           <Eye className="w-3.5 h-3.5 text-blue-600" />
                           {exp.receipt?.aiVerified === true && <Sparkles className="w-3 h-3 text-green-500" />}
                           {exp.receipt?.aiVerified === false && exp.receipt?.aiResult && <AlertTriangle className="w-3 h-3 text-amber-500" />}
                         </button>
                       ) : <span className="text-xs text-muted-foreground">—</span>}
+                    </td>
+                    <td className="text-center">
+                      <div className="flex items-center justify-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <button onClick={() => { setCreateType((exp._type || "other") as any); setEditExpense(exp); setCreateOpen(true); }} className="p-1.5 hover:bg-blue-50 dark:hover:bg-blue-950/20 rounded-lg text-blue-600 transition-colors"><Edit2 className="w-3.5 h-3.5" /></button>
+                        <button onClick={() => { if (!confirm("Delete this expense?")) return; fetch(`/api/finances/expenses/${exp.id}`, { method: "DELETE" }).then(r => r.json()).then(d => { if (d.success) { queryClient.invalidateQueries({ queryKey: ["expenses"] }); toast.success("Deleted"); } else toast.error(d.error); }); }} className="p-1.5 hover:bg-red-50 dark:hover:bg-red-950/20 rounded-lg text-red-500 transition-colors"><Trash2 className="w-3.5 h-3.5" /></button>
+                      </div>
                     </td>
                   </motion.tr>
                 );
@@ -178,12 +182,14 @@ export default function ExpensesPage() {
       {createOpen && (
         <AddExpenseModal
           type={createType}
+          editRecord={editExpense}
           projects={projectsData?.projects || []}
-          onClose={() => setCreateOpen(false)}
+          onClose={() => { setCreateOpen(false); setEditExpense(null); }}
           onSuccess={() => {
             setCreateOpen(false);
+            setEditExpense(null);
             queryClient.invalidateQueries({ queryKey: ["expenses"] });
-            toast.success(`${createType.charAt(0).toUpperCase() + createType.slice(1)} recorded!`);
+            toast.success(editExpense ? "Updated!" : `${createType.charAt(0).toUpperCase() + createType.slice(1)} recorded!`);
           }}
         />
       )}
@@ -191,8 +197,9 @@ export default function ExpensesPage() {
   );
 }
 
-function AddExpenseModal({ type, projects, onClose, onSuccess }: {
+function AddExpenseModal({ type, editRecord, projects, onClose, onSuccess }: {
   type: "utility" | "charge" | "other";
+  editRecord?: any;
   projects: any[];
   onClose: () => void;
   onSuccess: () => void;
@@ -202,16 +209,24 @@ function AddExpenseModal({ type, projects, onClose, onSuccess }: {
   const [preview, setPreview] = useState("");
   const fileRef = useRef<HTMLInputElement>(null);
   const cameraRef = useRef<HTMLInputElement>(null);
+  const isEdit = !!editRecord;
 
   const cats = type === "utility" ? UTILITY_CATS : type === "charge" ? CHARGE_CATS : OTHER_CATS;
   const colors = type === "utility" ? "bg-amber-500" : type === "charge" ? "bg-orange-500" : "bg-purple-500";
   const Icon = type === "utility" ? Zap : type === "charge" ? AlertCircle : MoreHorizontal;
-  const title = type === "utility" ? "Add Utility" : type === "charge" ? "Add Site Charge" : "Add Other Expense";
+  const title = isEdit ? `Edit ${type.charAt(0).toUpperCase() + type.slice(1)}` : type === "utility" ? "Add Utility" : type === "charge" ? "Add Site Charge" : "Add Other Expense";
+
+  const expDate = editRecord?.usageDate || editRecord?.chargeDate || editRecord?.expenseDate;
 
   const { register, handleSubmit, formState: { errors } } = useForm({
     defaultValues: {
-      projectId: "", name: "", category: cats[0], amount: 0,
-      paymentMethod: "CASH", date: new Date().toISOString().split("T")[0], description: ""
+      projectId: editRecord?.projectId || "",
+      name: editRecord?.name || "",
+      category: editRecord?.category || cats[0],
+      amount: editRecord?.amount || 0,
+      paymentMethod: editRecord?.paymentMethod || "CASH",
+      date: expDate ? new Date(expDate).toISOString().split("T")[0] : new Date().toISOString().split("T")[0],
+      description: editRecord?.description || "",
     }
   });
 
@@ -222,25 +237,31 @@ function AddExpenseModal({ type, projects, onClose, onSuccess }: {
   };
 
   const onSubmit = async (data: any) => {
-    if (!data.projectId) { toast.error("Please select a project"); return; }
+    if (!isEdit && !data.projectId) { toast.error("Please select a project"); return; }
     if (!data.name) { toast.error("Please enter a name"); return; }
     if (!data.amount || data.amount <= 0) { toast.error("Please enter an amount"); return; }
     setLoading(true);
     try {
-      const fd = new FormData();
-      fd.append("type", type);
-      Object.entries(data).forEach(([k, v]) => fd.append(k, String(v)));
-      if (receiptFile) fd.append("receipt", receiptFile);
-      const res = await fetch("/api/finances/expenses", { method: "POST", body: fd });
-      if (!res.ok) { const e = await res.json(); throw new Error(e.error || "Failed to record"); }
+      let res: Response;
+      if (isEdit) {
+        res = await fetch(`/api/finances/expenses/${editRecord.id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name: data.name, amount: data.amount, category: data.category, description: data.description, paymentMethod: data.paymentMethod, date: data.date }),
+        });
+      } else {
+        const fd = new FormData();
+        fd.append("type", type);
+        Object.entries(data).forEach(([k, v]) => fd.append(k, String(v)));
+        if (receiptFile) fd.append("receipt", receiptFile);
+        res = await fetch("/api/finances/expenses", { method: "POST", body: fd });
+      }
+      if (!res.ok) { const e = await res.json(); throw new Error(e.error || "Failed"); }
       const result = await res.json();
-      if (result.aiVerification) {
+      if (!isEdit && result.aiVerification) {
         const ai = result.aiVerification;
-        if (ai.verified) {
-          toast.success(`✅ Receipt verified by AI (${ai.confidence}% confidence)`);
-        } else if (ai.confidence > 0) {
-          toast.warning(`⚠️ Receipt mismatch detected — admins notified. ${ai.message}`, { duration: 6000 });
-        }
+        if (ai.verified) toast.success(`✅ Receipt verified by AI (${ai.confidence}% confidence)`);
+        else if (ai.confidence > 0) toast.warning(`⚠️ Receipt mismatch detected — admins notified. ${ai.message}`, { duration: 6000 });
       }
       onSuccess();
     } catch (e: any) { toast.error(e.message); }
@@ -261,13 +282,15 @@ function AddExpenseModal({ type, projects, onClose, onSuccess }: {
           <button onClick={onClose} className="p-2 hover:bg-muted rounded-xl"><X className="w-4 h-4" /></button>
         </div>
         <form onSubmit={handleSubmit(onSubmit)} className="p-6 space-y-4">
-          <div>
-            <label className="text-sm font-medium mb-1.5 block">Project *</label>
-            <select {...register("projectId", { required: true })} className="input-styled">
-              <option value="">Select project...</option>
-              {projects.map((p: any) => <option key={p.id} value={p.id}>{p.name}</option>)}
-            </select>
-          </div>
+          {!isEdit && (
+            <div>
+              <label className="text-sm font-medium mb-1.5 block">Project *</label>
+              <select {...register("projectId", { required: !isEdit })} className="input-styled">
+                <option value="">Select project...</option>
+                {projects.map((p: any) => <option key={p.id} value={p.id}>{p.name}</option>)}
+              </select>
+            </div>
+          )}
           <div>
             <label className="text-sm font-medium mb-1.5 block">Name / Description *</label>
             <input {...register("name", { required: true })} placeholder={
@@ -340,7 +363,7 @@ function AddExpenseModal({ type, projects, onClose, onSuccess }: {
             <motion.button type="submit" disabled={loading} whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}
               className={cn("flex-1 py-3 rounded-xl text-sm font-semibold text-white flex items-center justify-center gap-2 disabled:opacity-70", colors)}>
               {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
-              {loading ? "Saving..." : `Record ${type.charAt(0).toUpperCase() + type.slice(1)}`}
+              {loading ? "Saving..." : isEdit ? "Update" : `Record ${type.charAt(0).toUpperCase() + type.slice(1)}`}
             </motion.button>
           </div>
         </form>

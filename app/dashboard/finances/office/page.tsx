@@ -3,7 +3,7 @@
 import { useState, useRef } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { motion } from "framer-motion";
-import { CreditCard, Plus, X, Loader2, ChevronLeft, ChevronRight, Eye, Upload, Sparkles, AlertTriangle } from "lucide-react";
+import { CreditCard, Plus, X, Loader2, ChevronLeft, ChevronRight, Eye, Upload, Sparkles, AlertTriangle, Edit2, Trash2 } from "lucide-react";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
 import { cn, formatCurrency, formatDate } from "@/lib/utils";
@@ -12,6 +12,7 @@ import { ReceiptViewModal } from "@/components/purchases/receipt-view-modal";
 export default function OfficeExpensesPage() {
   const [page, setPage] = useState(1);
   const [createOpen, setCreateOpen] = useState(false);
+  const [editExpense, setEditExpense] = useState<any>(null);
   const [viewReceipt, setViewReceipt] = useState("");
   const queryClient = useQueryClient();
 
@@ -54,14 +55,14 @@ export default function OfficeExpensesPage() {
               <th className="text-left">Date</th><th className="text-left">Name</th>
               <th className="text-left">Category</th><th className="text-left">Method</th>
               <th className="text-right">Amount</th><th className="text-left">By</th>
-              <th className="text-center">Receipt</th>
+              <th className="text-center">Receipt</th><th className="text-center">Actions</th>
             </tr></thead>
             <tbody>
-              {isLoading ? Array.from({ length: 6 }).map((_, i) => <tr key={i}><td colSpan={7}><div className="skeleton h-5 m-2 rounded" /></td></tr>)
+              {isLoading ? Array.from({ length: 6 }).map((_, i) => <tr key={i}><td colSpan={8}><div className="skeleton h-5 m-2 rounded" /></td></tr>)
                 : expenses.length === 0 ? (
-                  <tr><td colSpan={7} className="py-16 text-center"><CreditCard className="w-12 h-12 mx-auto mb-2 text-muted-foreground opacity-20" /><p className="text-sm text-muted-foreground">No office expenses yet</p></td></tr>
+                  <tr><td colSpan={8} className="py-16 text-center"><CreditCard className="w-12 h-12 mx-auto mb-2 text-muted-foreground opacity-20" /><p className="text-sm text-muted-foreground">No office expenses yet</p></td></tr>
                 ) : expenses.map((exp: any) => (
-                  <tr key={exp.id} className="hover:bg-muted/20">
+                  <tr key={exp.id} className="hover:bg-muted/20 group">
                     <td className="text-xs text-muted-foreground">{formatDate(exp.expenseDate)}</td>
                     <td className="font-medium text-sm">{exp.name}</td>
                     <td><span className="badge-info text-[10px]">{exp.category}</span></td>
@@ -77,6 +78,22 @@ export default function OfficeExpensesPage() {
                           {exp.receipt?.aiVerified === false && exp.receipt?.aiResult && <AlertTriangle className="w-3 h-3 text-amber-500" />}
                         </button>
                       ) : <span className="text-xs text-muted-foreground">—</span>}
+                    </td>
+                    <td className="text-center">
+                      <div className="flex items-center justify-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <button onClick={() => { setEditExpense(exp); setCreateOpen(true); }}
+                          className="p-1.5 hover:bg-blue-50 dark:hover:bg-blue-950/20 rounded-lg text-blue-600 transition-colors">
+                          <Edit2 className="w-3.5 h-3.5" />
+                        </button>
+                        <button onClick={() => {
+                          if (!confirm("Delete this office expense?")) return;
+                          fetch(`/api/finances/office/${exp.id}`, { method: "DELETE" })
+                            .then(r => r.json())
+                            .then(d => { if (d.success) { queryClient.invalidateQueries({ queryKey: ["office-expenses"] }); toast.success("Deleted"); } else toast.error(d.error); });
+                        }} className="p-1.5 hover:bg-red-50 dark:hover:bg-red-950/20 rounded-lg text-red-500 transition-colors">
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -95,17 +112,28 @@ export default function OfficeExpensesPage() {
       </div>
 
       {viewReceipt && <ReceiptViewModal url={viewReceipt} onClose={() => setViewReceipt("")} />}
-      {createOpen && <AddOfficeExpenseModal onClose={() => setCreateOpen(false)} onSuccess={() => { setCreateOpen(false); queryClient.invalidateQueries({ queryKey: ["office-expenses"] }); toast.success("Expense added!"); }} />}
+      {createOpen && <AddOfficeExpenseModal editRecord={editExpense} onClose={() => { setCreateOpen(false); setEditExpense(null); }} onSuccess={() => { setCreateOpen(false); setEditExpense(null); queryClient.invalidateQueries({ queryKey: ["office-expenses"] }); toast.success(editExpense ? "Updated!" : "Expense added!"); }} />}
     </div>
   );
 }
 
-function AddOfficeExpenseModal({ onClose, onSuccess }: { onClose: () => void; onSuccess: () => void }) {
+function AddOfficeExpenseModal({ editRecord, onClose, onSuccess }: { editRecord?: any; onClose: () => void; onSuccess: () => void }) {
   const [loading, setLoading] = useState(false);
   const [receiptFile, setReceiptFile] = useState<File | null>(null);
   const [preview, setPreview] = useState("");
   const fileRef = useRef<HTMLInputElement>(null);
-  const { register, handleSubmit } = useForm({ defaultValues: { name: "", category: "OFFICE", amount: 0, paymentMethod: "CASH", expenseDate: new Date().toISOString().split("T")[0], description: "" } });
+  const isEdit = !!editRecord;
+
+  const { register, handleSubmit } = useForm({
+    defaultValues: {
+      name: editRecord?.name || "",
+      category: editRecord?.category || "OFFICE",
+      amount: editRecord?.amount || 0,
+      paymentMethod: editRecord?.paymentMethod || "CASH",
+      expenseDate: editRecord?.expenseDate ? new Date(editRecord.expenseDate).toISOString().split("T")[0] : new Date().toISOString().split("T")[0],
+      description: editRecord?.description || "",
+    }
+  });
 
   const handleFile = (e: React.ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0]; if (!f) return;
@@ -116,19 +144,25 @@ function AddOfficeExpenseModal({ onClose, onSuccess }: { onClose: () => void; on
   const onSubmit = async (data: any) => {
     setLoading(true);
     try {
-      const fd = new FormData();
-      Object.entries(data).forEach(([k, v]) => fd.append(k, String(v)));
-      if (receiptFile) fd.append("receipt", receiptFile);
-      const res = await fetch("/api/finances/office", { method: "POST", body: fd });
+      let res: Response;
+      if (isEdit) {
+        res = await fetch(`/api/finances/office/${editRecord.id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name: data.name, amount: data.amount, category: data.category, description: data.description, paymentMethod: data.paymentMethod, expenseDate: data.expenseDate }),
+        });
+      } else {
+        const fd = new FormData();
+        Object.entries(data).forEach(([k, v]) => fd.append(k, String(v)));
+        if (receiptFile) fd.append("receipt", receiptFile);
+        res = await fetch("/api/finances/office", { method: "POST", body: fd });
+      }
       if (!res.ok) { const e = await res.json(); throw new Error(e.error); }
       const result = await res.json();
-      if (result.aiVerification) {
+      if (!isEdit && result.aiVerification) {
         const ai = result.aiVerification;
-        if (ai.verified) {
-          toast.success(`✅ Receipt verified by AI (${ai.confidence}% confidence)`);
-        } else if (ai.confidence > 0) {
-          toast.warning(`⚠️ Receipt mismatch — admins notified. ${ai.message}`, { duration: 6000 });
-        }
+        if (ai.verified) toast.success(`✅ Receipt verified by AI (${ai.confidence}% confidence)`);
+        else if (ai.confidence > 0) toast.warning(`⚠️ Receipt mismatch — admins notified. ${ai.message}`, { duration: 6000 });
       }
       onSuccess();
     } catch (e: any) { toast.error(e.message); }
@@ -140,7 +174,7 @@ function AddOfficeExpenseModal({ onClose, onSuccess }: { onClose: () => void; on
       <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onClose} />
       <motion.div initial={{ opacity: 0, y: 40 }} animate={{ opacity: 1, y: 0 }} className="relative bg-card rounded-3xl shadow-2xl w-full max-w-md">
         <div className="px-6 pt-6 pb-4 border-b border-border flex items-center justify-between">
-          <h2 className="font-display font-bold">Add Office Expense</h2>
+          <h2 className="font-display font-bold">{isEdit ? "Edit Office Expense" : "Add Office Expense"}</h2>
           <button onClick={onClose} className="p-2 hover:bg-muted rounded-xl"><X className="w-4 h-4" /></button>
         </div>
         <form onSubmit={handleSubmit(onSubmit)} className="p-6 space-y-4">

@@ -17,14 +17,17 @@ export async function GET(req: NextRequest) {
       CANCELLED: "#ef4444",
     };
 
-    const statusData = await Promise.all(
-      statuses.map(async (status) => {
-        const count = await prisma.project.count({ where: { status: status as any } });
-        return { name: status.charAt(0) + status.slice(1).toLowerCase().replace("_", " "), value: count, color: colors[status] };
-      })
-    );
+    const [statusData, projects] = await Promise.all([
+      Promise.all(
+        statuses.map(async (status) => {
+          const count = await prisma.project.count({ where: { status: status as any } });
+          return { name: status.charAt(0) + status.slice(1).toLowerCase().replace("_", " "), value: count, color: colors[status] };
+        })
+      ),
+      prisma.project.findMany({ select: { id: true, name: true, status: true }, orderBy: { name: "asc" } }),
+    ]);
 
-    return NextResponse.json({ statusData: statusData.filter((d) => d.value > 0) });
+    return NextResponse.json({ statusData: statusData.filter((d) => d.value > 0), projects });
   } catch (err) {
     return NextResponse.json({ error: "Server error" }, { status: 500 });
   }

@@ -202,6 +202,20 @@ function ProjectCard({ project, index, session }: { project: any; index: number;
   const totalSpent = project.purchases?.reduce((s: number, p: any) => s + p.totalAmount, 0) || 0;
   const spendPct = percentage(totalSpent, totalReceived);
   const managers = project.assignments || [];
+  const isAdmin = session.user.role === "SYSTEM_ADMIN";
+  const router = useRouter();
+
+  const handleDelete = async (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!confirm(`Delete project "${project.name}"? This cannot be undone.`)) return;
+    try {
+      const res = await fetch(`/api/projects/${project.id}`, { method: "DELETE" });
+      if (!res.ok) { const err = await res.json(); throw new Error(err.error); }
+      toast.success("Project deleted");
+      router.refresh();
+    } catch (e: any) { toast.error(e.message || "Failed to delete project"); }
+  };
 
   return (
     <motion.div
@@ -209,7 +223,18 @@ function ProjectCard({ project, index, session }: { project: any; index: number;
       animate={{ opacity: 1, y: 0 }}
       transition={{ delay: index * 0.05 }}
       whileHover={{ y: -4 }}
+      className="relative"
     >
+      {/* Admin delete button */}
+      {isAdmin && (
+        <button
+          onClick={handleDelete}
+          className="absolute top-2 left-2 z-10 p-1.5 bg-red-500/80 hover:bg-red-600 rounded-lg text-white transition-colors backdrop-blur-sm"
+          title="Delete project"
+        >
+          <Trash2 className="w-3.5 h-3.5" />
+        </button>
+      )}
       <Link href={`/dashboard/projects/${project.id}`}>
         <div className="bg-card border border-border rounded-2xl overflow-hidden shadow-card hover:shadow-card-hover transition-all duration-300 cursor-pointer">
           {/* Project Image / Header */}
@@ -317,10 +342,23 @@ function ProjectCard({ project, index, session }: { project: any; index: number;
 function ProjectListItem({ project, session }: { project: any; session: Session }) {
   const totalReceived = project.moneyReceived?.reduce((s: number, m: any) => s + m.amount, 0) || 0;
   const totalSpent = project.purchases?.reduce((s: number, p: any) => s + p.totalAmount, 0) || 0;
+  const isAdmin = session.user.role === "SYSTEM_ADMIN";
+  const router = useRouter();
+
+  const handleDelete = async (e: React.MouseEvent) => {
+    e.preventDefault(); e.stopPropagation();
+    if (!confirm(`Delete project "${project.name}"? This cannot be undone.`)) return;
+    try {
+      const res = await fetch(`/api/projects/${project.id}`, { method: "DELETE" });
+      if (!res.ok) { const err = await res.json(); throw new Error(err.error); }
+      toast.success("Project deleted"); router.refresh();
+    } catch (e: any) { toast.error(e.message || "Failed to delete"); }
+  };
 
   return (
-    <Link href={`/dashboard/projects/${project.id}`}>
-      <div className="bg-card border border-border rounded-2xl p-4 hover:shadow-card-hover transition-all duration-200 flex items-center gap-4 cursor-pointer group">
+    <div className="relative group/item">
+      <Link href={`/dashboard/projects/${project.id}`}>
+        <div className="bg-card border border-border rounded-2xl p-4 hover:shadow-card-hover transition-all duration-200 flex items-center gap-4 cursor-pointer group">
         {/* Icon */}
         <div className="w-12 h-12 bg-gradient-brand rounded-xl flex items-center justify-center flex-shrink-0">
           <HardHat className="w-6 h-6 text-white" />
@@ -362,5 +400,15 @@ function ProjectListItem({ project, session }: { project: any; session: Session 
         <Eye className="w-4 h-4 text-muted-foreground group-hover:text-primary transition-colors flex-shrink-0" />
       </div>
     </Link>
+    {isAdmin && (
+      <button
+        onClick={handleDelete}
+        className="absolute right-3 top-1/2 -translate-y-1/2 p-2 bg-red-50 dark:bg-red-950/20 text-red-500 rounded-xl hover:bg-red-100 dark:hover:bg-red-950/40 transition-colors opacity-0 group-hover/item:opacity-100"
+        title="Delete project"
+      >
+        <Trash2 className="w-4 h-4" />
+      </button>
+    )}
+  </div>
   );
 }

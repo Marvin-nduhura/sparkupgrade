@@ -132,6 +132,17 @@ export default function PurchasesPage() {
                       <CreditCard className="w-3 h-3" />Add Payment
                     </button>
                   )}
+                  <button
+                    onClick={() => {
+                      if (!confirm("Delete this purchase? This will reverse inventory quantities.")) return;
+                      fetch(`/api/purchases/${purchase.id}`, { method: "DELETE" })
+                        .then(r => r.json())
+                        .then(d => { if (d.success) { queryClient.invalidateQueries({ queryKey: ["purchases"] }); toast.success("Purchase deleted"); } else toast.error(d.error); })
+                        .catch(() => toast.error("Failed to delete"));
+                    }}
+                    className="text-xs px-3 py-1.5 bg-red-50 dark:bg-red-950/20 text-red-500 hover:bg-red-100 rounded-lg flex items-center gap-1 transition-colors ml-auto">
+                    <AlertTriangle className="w-3 h-3" />Delete
+                  </button>
                 </div>
               </motion.div>
             );

@@ -7,7 +7,7 @@ import {
   TrendingUp, TrendingDown, Camera, Edit2, ArrowLeft, ChevronDown,
   ChevronRight, Clock, CheckCircle2, Image, Zap, FileText, Map,
   Navigation, HardHat, AlertCircle, Plus, ExternalLink, Eye, X,
-  Loader2, AlertTriangle, RefreshCw, Search
+  Loader2, AlertTriangle, RefreshCw, Search, Trash2, Check, ChevronsUpDown
 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -23,6 +23,7 @@ import { useDebounce } from "@/hooks/use-debounce";
 const tabs = [
   { id: "overview", label: "Overview", icon: Building2 },
   { id: "finances", label: "Finances", icon: DollarSign },
+  { id: "received", label: "Money Received", icon: TrendingUp },
   { id: "purchases", label: "Purchases", icon: Receipt },
   { id: "inventory", label: "Inventory", icon: Package },
   { id: "expenses", label: "Expenses", icon: TrendingDown },
@@ -37,11 +38,28 @@ export function ProjectDetailContent({ project, session, totalReceived, totalSpe
   const [activeTab, setActiveTab] = useState("overview");
   const [viewReceipt, setViewReceipt] = useState("");
   const [uploadMediaOpen, setUploadMediaOpen] = useState(false);
+  const [statusChanging, setStatusChanging] = useState(false);
   const router = useRouter();
   const balance = totalReceived - totalSpent;
   const spendPct = percentage(totalSpent, totalReceived);
   const isManager = session.user.role === "SITE_MANAGER";
   const isAdmin = session.user.role === "SYSTEM_ADMIN";
+
+  const handleStatusChange = async (newStatus: string) => {
+    if (newStatus === project.status) return;
+    setStatusChanging(true);
+    try {
+      const res = await fetch(`/api/projects/${project.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: newStatus }),
+      });
+      if (!res.ok) throw new Error("Failed to update status");
+      toast.success(`Status → ${newStatus}`);
+      router.refresh();
+    } catch (e: any) { toast.error(e.message); }
+    finally { setStatusChanging(false); }
+  };
 
   const openMap = () => {
     if (project.latitude && project.longitude) {
@@ -101,6 +119,22 @@ export function ProjectDetailContent({ project, session, totalReceived, totalSpe
             project.status === "ACTIVE" ? "bg-green-500/80 text-white" : "bg-amber-500/80 text-white")}>
             {project.status}
           </span>
+          {isAdmin && (
+            <div className="inline-flex items-center gap-1 ml-2 mb-2">
+              <select
+                value={project.status}
+                onChange={e => handleStatusChange(e.target.value)}
+                disabled={statusChanging}
+                className="text-[10px] font-bold uppercase px-2 py-1 rounded-full bg-black/40 text-white backdrop-blur-sm border border-white/20 cursor-pointer focus:outline-none"
+                onClick={e => e.stopPropagation()}
+              >
+                {["PLANNING","ACTIVE","ON_HOLD","COMPLETED","CANCELLED"].map(s => (
+                  <option key={s} value={s} className="text-foreground bg-card text-xs font-normal">{s}</option>
+                ))}
+              </select>
+              {statusChanging && <Loader2 className="w-3 h-3 animate-spin text-white" />}
+            </div>
+          )}
           <h1 className="text-xl sm:text-2xl font-display font-bold text-white leading-tight">{project.name}</h1>
           <div className="flex items-center gap-1 text-white/80 text-sm mt-1">
             <MapPin className="w-3.5 h-3.5" /> {project.location}
@@ -241,6 +275,10 @@ export function ProjectDetailContent({ project, session, totalReceived, totalSpe
                   ))}
                 </div>
               </div>
+            )}
+
+            {activeTab === "received" && (
+              <ProjectMoneyReceivedTab project={project} session={session} />
             )}
 
             {activeTab === "purchases" && (
@@ -888,6 +926,201 @@ function ProjectUsageModal({ type, projectId, onClose, onSuccess }: {
                 isUse ? "bg-orange-500 hover:bg-orange-600" : "bg-green-500 hover:bg-green-600")}>
               {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : isUse ? <TrendingDown className="w-4 h-4" /> : <TrendingUp className="w-4 h-4" />}
               {loading ? "Saving..." : isUse ? "Record Usage" : "Confirm Restock"}
+            </motion.button>
+          </div>
+        </form>
+      </motion.div>
+    </div>
+  );
+}
+
+// ── Project Money Received Tab ───────────────────────────────────────────────
+function ProjectMoneyReceivedTab({ project, session }: { project: any; session: Session }) {
+  const [addOpen, setAddOpen] = useState(false);
+  const queryClient = useQueryClient();
+  const isManager = session.user.role === "SITE_MANAGER";
+  const isAdmin = session.user.role === "SYSTEM_ADMIN";
+  const canAdd = isManager || isAdmin;
+
+  const { data, isLoading, refetch } = useQuery({
+    queryKey: ["project-received", project.id],
+    queryFn: async () => {
+      const r = await fetch(`/api/finances/received?projectId=${project.id}&limit=50`);
+      return r.json();
+    },
+  });
+
+  const records = data?.records || [];
+  const total = records.reduce((s: number, r: any) => s + r.amount, 0);
+
+  const handleDelete = async (id: string) => {
+    if (!confirm("Delete this record?")) return;
+    try {
+      const res = await fetch(`/api/finances/received/${id}`, { method: "DELETE" });
+      if (!res.ok) throw new Error("Failed");
+      toast.success("Deleted"); refetch();
+    } catch { toast.error("Failed to delete"); }
+  };
+
+  return (
+    <div className="space-y-4">
+      {/* Summary + add button */}
+      <div className="flex items-center justify-between">
+        <div className="p-4 bg-green-50 dark:bg-green-950/20 border border-green-200 dark:border-green-800 rounded-2xl flex-1 mr-3">
+          <p className="text-xs text-muted-foreground">Total Received (this project)</p>
+          <p className="text-2xl font-bold font-display text-green-600">{formatCurrency(total)}</p>
+          <p className="text-xs text-muted-foreground mt-0.5">{records.length} transactions</p>
+        </div>
+        {canAdd && (
+          <motion.button whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }} onClick={() => setAddOpen(true)}
+            className="btn-brand flex items-center gap-2 text-sm flex-shrink-0">
+            <Plus className="w-4 h-4" /> Record
+          </motion.button>
+        )}
+      </div>
+
+      {isLoading ? (
+        <div className="space-y-2">{Array.from({ length: 4 }).map((_, i) => <div key={i} className="skeleton h-14 rounded-xl" />)}</div>
+      ) : records.length === 0 ? (
+        <div className="py-12 text-center">
+          <TrendingUp className="w-12 h-12 mx-auto mb-3 text-muted-foreground opacity-20" />
+          <p className="text-muted-foreground text-sm">No funds received yet</p>
+          {canAdd && <button onClick={() => setAddOpen(true)} className="mt-3 text-xs text-primary hover:underline">+ Record first payment</button>}
+        </div>
+      ) : (
+        <div className="bg-card border border-border rounded-2xl overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full data-table">
+              <thead><tr>
+                <th className="text-left">Date</th>
+                <th className="text-left">Source</th>
+                <th className="text-left">Method</th>
+                <th className="text-left">Ref</th>
+                <th className="text-right">Amount</th>
+                <th className="text-left">By</th>
+                <th className="text-center">Actions</th>
+              </tr></thead>
+              <tbody>
+                {records.map((rec: any) => (
+                  <tr key={rec.id} className="hover:bg-muted/20 group">
+                    <td className="text-xs text-muted-foreground">{formatDate(rec.receivedDate)}</td>
+                    <td className="text-sm font-medium">{rec.source}</td>
+                    <td><span className="badge-info text-[10px]">{rec.paymentMethod?.replace(/_/g, " ")}</span></td>
+                    <td className="text-xs text-muted-foreground">{rec.reference || "—"}</td>
+                    <td className="text-right font-bold text-green-600">{formatCurrency(rec.amount)}</td>
+                    <td className="text-xs text-muted-foreground">{rec.receivedBy?.name}</td>
+                    <td className="text-center">
+                      <button onClick={() => handleDelete(rec.id)}
+                        className="p-1.5 hover:bg-red-50 dark:hover:bg-red-950/20 rounded-lg text-red-500 opacity-0 group-hover:opacity-100 transition-all mx-auto block">
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* Add modal */}
+      <AnimatePresence>
+        {addOpen && (
+          <ProjectAddReceivedModal
+            projectId={project.id}
+            onClose={() => setAddOpen(false)}
+            onSuccess={() => { setAddOpen(false); refetch(); toast.success("Money received recorded!"); }}
+          />
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
+
+function ProjectAddReceivedModal({ projectId, onClose, onSuccess }: {
+  projectId: string; onClose: () => void; onSuccess: () => void;
+}) {
+  const [loading, setLoading] = useState(false);
+  const { register, handleSubmit } = useForm({
+    defaultValues: {
+      projectId,
+      amount: 0,
+      source: "",
+      paymentMethod: "CASH",
+      receivedDate: new Date().toISOString().split("T")[0],
+      description: "",
+      reference: "",
+    }
+  });
+
+  const onSubmit = async (data: any) => {
+    setLoading(true);
+    try {
+      const res = await fetch("/api/finances/received", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+      });
+      if (!res.ok) { const e = await res.json(); throw new Error(e.error); }
+      onSuccess();
+    } catch (e: any) { toast.error(e.message); }
+    finally { setLoading(false); }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4">
+      <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+        className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onClose} />
+      <motion.div initial={{ opacity: 0, y: 40 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 20 }}
+        className="relative bg-card rounded-3xl shadow-2xl w-full max-w-md max-h-[90vh] overflow-y-auto scrollbar-thin">
+        <div className="px-6 pt-6 pb-4 border-b border-border flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 bg-green-500 rounded-xl flex items-center justify-center">
+              <TrendingUp className="w-4 h-4 text-white" />
+            </div>
+            <h2 className="font-display font-bold">Record Money Received</h2>
+          </div>
+          <button onClick={onClose} className="p-2 hover:bg-muted rounded-xl"><X className="w-4 h-4" /></button>
+        </div>
+        <form onSubmit={handleSubmit(onSubmit)} className="p-6 space-y-4">
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="text-sm font-medium mb-1.5 block">Amount (UGX) *</label>
+              <input {...register("amount", { valueAsNumber: true, required: true, min: 1 })} type="number" min="1" className="input-styled text-lg font-bold" />
+            </div>
+            <div>
+              <label className="text-sm font-medium mb-1.5 block">Date *</label>
+              <input {...register("receivedDate")} type="date" className="input-styled" />
+            </div>
+          </div>
+          <div>
+            <label className="text-sm font-medium mb-1.5 block">Source *</label>
+            <input {...register("source", { required: true })} placeholder="e.g., Company Account, Client Payment" className="input-styled" />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="text-sm font-medium mb-1.5 block">Method</label>
+              <select {...register("paymentMethod")} className="input-styled">
+                {["CASH","BANK_TRANSFER","MTN_MOBILE_MONEY","AIRTEL_MONEY","CHEQUE","OTHER"].map(m => (
+                  <option key={m} value={m}>{m.replace(/_/g, " ")}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="text-sm font-medium mb-1.5 block">Reference</label>
+              <input {...register("reference")} placeholder="Ref no." className="input-styled" />
+            </div>
+          </div>
+          <div>
+            <label className="text-sm font-medium mb-1.5 block">Description</label>
+            <textarea {...register("description")} rows={2} className="input-styled resize-none" />
+          </div>
+          <div className="flex gap-3">
+            <button type="button" onClick={onClose} className="flex-1 py-3 rounded-xl border border-border text-sm hover:bg-muted">Cancel</button>
+            <motion.button type="submit" disabled={loading} whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}
+              className="flex-1 btn-brand py-3 text-sm flex items-center justify-center gap-2">
+              {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
+              {loading ? "Saving..." : "Record"}
             </motion.button>
           </div>
         </form>
