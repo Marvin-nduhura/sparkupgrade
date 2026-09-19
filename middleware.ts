@@ -2,28 +2,33 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { getToken } from "next-auth/jwt";
 
+// Paths that never need auth
+const PUBLIC_PATHS = [
+  "/login", "/api/auth", "/api/pesapal/ipn",
+  "/_next", "/icons", "/screenshots", "/uploads",
+  "/manifest.json", "/sw.js", "/workbox-", "/favicon.ico",
+];
+
 export async function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
 
-  // Always allow these paths
-  if (
-    pathname.startsWith("/login") ||
-    pathname.startsWith("/api/auth") ||
-    pathname.startsWith("/api/pesapal/ipn") ||
-    pathname.startsWith("/_next") ||
-    pathname.startsWith("/icons") ||
-    pathname.startsWith("/screenshots") ||
-    pathname.startsWith("/uploads") ||
-    pathname === "/manifest.json" ||
-    pathname === "/sw.js" ||
-    pathname.startsWith("/workbox-")
-  ) {
+  // Allow public paths
+  if (PUBLIC_PATHS.some(p => pathname.startsWith(p))) {
     return NextResponse.next();
   }
 
-  const token = await getToken({ req, secret: process.env.NEXTAUTH_SECRET });
+  // Get JWT token — works with both secure and non-secure cookies
+  const token = await getToken({
+    req,
+    secret: process.env.NEXTAUTH_SECRET,
+    // NextAuth v5 uses different cookie names
+    cookieName: process.env.NODE_ENV === "production"
+      ? "__Secure-authjs.session-token"
+      : "authjs.session-token",
+    secureCookie: process.env.NODE_ENV === "production",
+  });
 
-  // Redirect unauthenticated users to login
+  // Not authenticated — send to login
   if (!token) {
     const loginUrl = new URL("/login", req.url);
     loginUrl.searchParams.set("callbackUrl", pathname);
@@ -37,7 +42,7 @@ export async function middleware(req: NextRequest) {
     return NextResponse.redirect(new URL("/dashboard", req.url));
   }
 
-  // Routes accountants cannot access
+  // Accountant blocked routes
   const accountantBlocked = ["/dashboard/map", "/dashboard/media"];
   if (accountantBlocked.some(r => pathname.startsWith(r)) && role === "ACCOUNTANT") {
     return NextResponse.redirect(new URL("/dashboard", req.url));
