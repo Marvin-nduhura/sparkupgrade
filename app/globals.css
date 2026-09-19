@@ -156,9 +156,9 @@
     transform: translateX(-100%);
   }
 
-  /* Bottom nav mobile */
+  /* Bottom nav — visible on all screen sizes */
   .bottom-nav {
-    @apply fixed bottom-0 left-0 right-0 z-50 bg-background/95 backdrop-blur-xl border-t border-border md:hidden;
+    @apply bg-background/95 backdrop-blur-xl border-t border-border;
   }
 
   /* Floating action button */
