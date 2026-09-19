@@ -58,7 +58,7 @@ export default function DailyReportPage() {
   const projectReports = report?.projects || [];
 
   return (
-    <div className="page-container pb-24 md:pb-8">
+    <div className="page-container">
       {/* Header */}
       <div className="flex items-center gap-3 mb-6">
         <button onClick={() => router.back()} className="p-2 hover:bg-muted rounded-xl transition-colors">

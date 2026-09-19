@@ -49,7 +49,7 @@ export default function ProjectReportsPage() {
   const projects = projectsData?.projects || [];
 
   return (
-    <div className="page-container pb-24 md:pb-8">
+    <div className="page-container">
       <div className="section-header">
         <div>
           <h1 className="text-2xl font-display font-bold">Project Reports</h1>

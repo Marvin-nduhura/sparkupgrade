@@ -40,7 +40,7 @@ export default function SettingsPage() {
   const tabs = isAdmin ? ADMIN_TABS : TABS;
 
   return (
-    <div className="page-container pb-24 md:pb-8">
+    <div className="page-container">
       <div className="section-header">
         <div>
           <h1 className="text-2xl font-display font-bold">Settings</h1>

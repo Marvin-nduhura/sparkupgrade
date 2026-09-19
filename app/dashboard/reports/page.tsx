@@ -3,78 +3,78 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { motion } from "framer-motion";
-import {
-  FileText, Download, BarChart3, TrendingUp, Building2,
-  Calendar, Filter, Loader2, BookOpen, ChevronDown
-} from "lucide-react";
-import { cn, formatCurrency, formatDate } from "@/lib/utils";
+import { FileText, Download, BarChart3, TrendingUp, Loader2 } from "lucide-react";
+import { cn, formatCurrency } from "@/lib/utils";
 import { toast } from "sonner";
 import { RevenueChart } from "@/components/charts/revenue-chart";
-import { ProjectStatusChart } from "@/components/charts/project-status-chart";
 import { ExpenseBreakdownChart } from "@/components/charts/expense-breakdown-chart";
+import { PeriodSelector, usePeriodDates, type PeriodState } from "@/components/reports/period-selector";
 
 export default function ReportsPage() {
   const [selectedProject, setSelectedProject] = useState("");
-  const [period, setPeriod] = useState("month");
-  const [startDate, setStartDate] = useState("");
-  const [endDate, setEndDate] = useState("");
+  const [ps, setPs] = useState<PeriodState>({
+    period: "month", startDate: "", endDate: "",
+    year: String(new Date().getFullYear()),
+    month: String(new Date().getMonth() + 1).padStart(2, "0"),
+  });
   const [downloading, setDownloading] = useState<string>("");
+
+  const { period: apiPeriod, startDate: apiStart, endDate: apiEnd } = usePeriodDates(ps);
 
   const { data: projectsData } = useQuery({
     queryKey: ["projects-list"],
-    queryFn: async () => { const res = await fetch("/api/projects?limit=50"); return res.json(); },
+    queryFn: async () => { const r = await fetch("/api/projects?limit=50"); return r.json(); },
   });
 
   const { data: reportData, isLoading } = useQuery({
-    queryKey: ["report", selectedProject, period, startDate, endDate],
+    queryKey: ["report", selectedProject, apiPeriod, apiStart, apiEnd],
     queryFn: async () => {
-      const params = new URLSearchParams({ period });
-      if (selectedProject) params.set("projectId", selectedProject);
-      if (startDate) params.set("startDate", startDate);
-      if (endDate) params.set("endDate", endDate);
-      const res = await fetch(`/api/reports/summary?${params}`);
-      return res.json();
+      const p = new URLSearchParams({ period: apiPeriod });
+      if (selectedProject) p.set("projectId", selectedProject);
+      if (apiStart) p.set("startDate", apiStart);
+      if (apiEnd) p.set("endDate", apiEnd);
+      const r = await fetch(`/api/reports/summary?${p}`);
+      return r.json();
     },
   });
 
-  const handleDownload = async (format: "pdf" | "excel" | "word") => {
-    setDownloading(format);
+  const handleDownload = async (fmt: "pdf" | "excel" | "word") => {
+    setDownloading(fmt);
     try {
-      const params = new URLSearchParams({ format, period });
-      if (selectedProject) params.set("projectId", selectedProject);
-      if (startDate) params.set("startDate", startDate);
-      if (endDate) params.set("endDate", endDate);
-      const res = await fetch(`/api/reports/download?${params}`);
+      const p = new URLSearchParams({ format: fmt, period: apiPeriod });
+      if (selectedProject) p.set("projectId", selectedProject);
+      if (apiStart) p.set("startDate", apiStart);
+      if (apiEnd) p.set("endDate", apiEnd);
+      const res = await fetch(`/api/reports/download?${p}`);
       if (!res.ok) throw new Error("Download failed");
       const blob = await res.blob();
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `buildspark-report-${Date.now()}.${format === "excel" ? "xlsx" : format === "word" ? "docx" : "pdf"}`;
-      a.click();
-      window.URL.revokeObjectURL(url);
-      toast.success(`Report downloaded as ${format.toUpperCase()}!`);
-    } catch (e: any) { toast.error(e.message || "Download failed"); }
+      a.download = `report-${Date.now()}.${fmt === "excel" ? "xlsx" : fmt === "word" ? "doc" : "html"}`;
+      a.click(); window.URL.revokeObjectURL(url);
+      toast.success(`Downloaded as ${fmt.toUpperCase()}`);
+    } catch (e: any) { toast.error(e.message); }
     finally { setDownloading(""); }
   };
 
   const summary = reportData?.summary || {};
 
   return (
-    <div className="page-container pb-24 md:pb-8">
+    <div className="page-container">
       <div className="section-header">
         <div>
           <h1 className="text-2xl font-display font-bold">Reports</h1>
-          <p className="text-sm text-muted-foreground">Financial & project performance reports</p>
+          <p className="text-sm text-muted-foreground">Financial &amp; project performance overview</p>
         </div>
-        {/* Download buttons */}
         <div className="flex gap-2">
           {(["pdf", "excel", "word"] as const).map(fmt => (
-            <motion.button key={fmt} whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }} onClick={() => handleDownload(fmt)}
-              disabled={!!downloading} className={cn("flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold border transition-all",
-                fmt === "pdf" ? "bg-red-50 dark:bg-red-950/20 text-red-600 border-red-200 dark:border-red-800 hover:bg-red-100" :
-                fmt === "excel" ? "bg-green-50 dark:bg-green-950/20 text-green-600 border-green-200 dark:border-green-800 hover:bg-green-100" :
-                "bg-blue-50 dark:bg-blue-950/20 text-blue-600 border-blue-200 dark:border-blue-800 hover:bg-blue-100")}>
+            <motion.button key={fmt} whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}
+              onClick={() => handleDownload(fmt)} disabled={!!downloading}
+              className={cn("flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold border transition-all",
+                fmt === "pdf" ? "bg-red-50 dark:bg-red-950/20 text-red-600 border-red-200 dark:border-red-800" :
+                fmt === "excel" ? "bg-green-50 dark:bg-green-950/20 text-green-600 border-green-200 dark:border-green-800" :
+                "bg-blue-50 dark:bg-blue-950/20 text-blue-600 border-blue-200 dark:border-blue-800")}>
               {downloading === fmt ? <Loader2 className="w-3 h-3 animate-spin" /> : <Download className="w-3 h-3" />}
               {fmt.toUpperCase()}
             </motion.button>
@@ -82,34 +82,19 @@ export default function ReportsPage() {
         </div>
       </div>
 
-      {/* Filters */}
-      <div className="flex flex-wrap gap-3 mb-6 p-4 bg-card border border-border rounded-2xl">
-        <select value={selectedProject} onChange={e => setSelectedProject(e.target.value)} className="input-styled flex-1 min-w-32">
-          <option value="">All Projects</option>
-          {(projectsData?.projects || []).map((p: any) => <option key={p.id} value={p.id}>{p.name}</option>)}
-        </select>
-        <div className="flex gap-1 bg-muted p-1 rounded-xl">
-          {[["day","Today"],["week","Week"],["month","Month"],["year","Year"],["custom","Custom"]].map(([v,l]) => (
-            <button key={v} onClick={() => setPeriod(v)} className={cn("px-3 py-1.5 rounded-lg text-xs font-medium transition-all whitespace-nowrap", period === v ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground")}>
-              {l}
-            </button>
-          ))}
-        </div>
-        {period === "custom" && (
-          <div className="flex gap-2">
-            <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} className="input-styled text-sm" placeholder="Start date" />
-            <input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} className="input-styled text-sm" placeholder="End date" />
-          </div>
-        )}
-      </div>
+      <PeriodSelector
+        state={ps} onChange={v => setPs(p => ({ ...p, ...v }))}
+        projects={projectsData?.projects || []}
+        selectedProject={selectedProject} onProjectChange={setSelectedProject}
+      />
 
       {/* Summary Stats */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-4 mb-6">
         {[
           { label: "Total Received", value: summary.totalReceived || 0, color: "text-green-600", bg: "bg-green-50 dark:bg-green-950/20" },
           { label: "Total Spent", value: summary.totalSpent || 0, color: "text-red-500", bg: "bg-red-50 dark:bg-red-950/20" },
           { label: "Net Balance", value: (summary.totalReceived || 0) - (summary.totalSpent || 0), color: ((summary.totalReceived || 0) - (summary.totalSpent || 0)) >= 0 ? "text-blue-600" : "text-red-500", bg: "bg-blue-50 dark:bg-blue-950/20" },
-          { label: "Total Purchases", value: summary.purchaseCount || 0, color: "text-primary", bg: "bg-primary/5", isCurrency: false },
+          { label: "Purchases", value: summary.purchaseCount || 0, color: "text-primary", bg: "bg-primary/5", isCurrency: false },
         ].map(stat => (
           <div key={stat.label} className={cn("p-4 rounded-2xl border border-border", stat.bg)}>
             <p className="text-xs text-muted-foreground">{stat.label}</p>
@@ -132,10 +117,10 @@ export default function ReportsPage() {
         </div>
       </div>
 
-      {/* Project-level breakdown */}
+      {/* Project breakdown table */}
       {reportData?.projects?.length > 0 && (
-        <div className="bg-card border border-border rounded-2xl p-4 sm:p-6">
-          <h3 className="font-display font-semibold mb-4">Project Breakdown</h3>
+        <div className="bg-card border border-border rounded-2xl overflow-hidden">
+          <div className="px-5 py-3 border-b border-border"><h3 className="font-semibold">Project Breakdown</h3></div>
           <div className="overflow-x-auto">
             <table className="w-full data-table">
               <thead><tr>
@@ -148,14 +133,14 @@ export default function ReportsPage() {
               </tr></thead>
               <tbody>
                 {reportData.projects.map((proj: any) => {
-                  const balance = proj.received - proj.spent;
+                  const bal = proj.received - proj.spent;
                   const pct = proj.received > 0 ? Math.round((proj.spent / proj.received) * 100) : 0;
                   return (
                     <tr key={proj.id} className="hover:bg-muted/20">
                       <td className="font-medium">{proj.name}</td>
                       <td className="text-right text-green-600 font-semibold">{formatCurrency(proj.received)}</td>
                       <td className="text-right text-red-500 font-semibold">{formatCurrency(proj.spent)}</td>
-                      <td className={cn("text-right font-bold", balance >= 0 ? "text-blue-600" : "text-red-500")}>{formatCurrency(Math.abs(balance))}</td>
+                      <td className={cn("text-right font-bold", bal >= 0 ? "text-blue-600" : "text-red-500")}>{formatCurrency(Math.abs(bal))}</td>
                       <td className="text-right">{proj.purchaseCount}</td>
                       <td className="text-center">
                         <div className="flex items-center gap-2">

@@ -43,7 +43,7 @@ export default function PurchasesPage() {
   const pagination = data?.pagination;
 
   return (
-    <div className="page-container pb-24 md:pb-8">
+    <div className="page-container">
       <div className="section-header">
         <div>
           <h1 className="text-2xl font-display font-bold">Purchases</h1>
@@ -232,7 +232,15 @@ function CreatePurchaseModal({ onClose, onSuccess }: { onClose: () => void; onSu
       const res = await fetch("/api/purchases", { method: "POST", body: formData });
       if (!res.ok) { const e = await res.json(); throw new Error(e.error); }
       const result = await res.json();
-      if (result.aiVerification) setAiResult(result.aiVerification);
+      if (result.aiVerification) {
+        const ai = result.aiVerification;
+        setAiResult(ai);
+        if (ai.verified) {
+          toast.success(`✅ Receipt verified by AI (${ai.confidence}% confidence)`);
+        } else {
+          toast.error(`⚠️ Receipt mismatch detected — admins have been notified. ${ai.message}`, { duration: 8000 });
+        }
+      }
       onSuccess();
     } catch (e: any) { toast.error(e.message); }
     finally { setLoading(false); }
@@ -342,11 +350,18 @@ function CreatePurchaseModal({ onClose, onSuccess }: { onClose: () => void; onSu
                 <Camera className="w-4 h-4" /> Take Photo
               </button>
             </div>
-            <input ref={fileRef} type="file" accept="image/*,application/pdf" className="hidden" onChange={handleReceiptChange} />
+            <input ref={fileRef} type="file" accept="image/*,application/pdf,.doc,.docx,.xls,.xlsx" className="hidden" onChange={handleReceiptChange} />
             <input ref={cameraRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={handleReceiptChange} />
-            {receiptPreview && (
+            {receiptFile && (
               <div className="mt-2 relative">
-                <img src={receiptPreview} alt="Receipt" className="w-full h-32 object-cover rounded-xl" />
+                {receiptPreview ? (
+                  <img src={receiptPreview} alt="Receipt" className="w-full h-32 object-cover rounded-xl" />
+                ) : (
+                  <div className="w-full h-20 bg-muted/50 rounded-xl flex items-center justify-center gap-2 text-sm text-muted-foreground border border-border">
+                    <Package className="w-5 h-5" />
+                    <span className="truncate max-w-48">{receiptFile.name}</span>
+                  </div>
+                )}
                 <div className="absolute top-2 right-2 bg-black/50 text-white text-[10px] px-2 py-0.5 rounded-full backdrop-blur-sm flex items-center gap-1">
                   <Sparkles className="w-2.5 h-2.5" /> AI will verify
                 </div>
@@ -369,6 +384,14 @@ function CreatePurchaseModal({ onClose, onSuccess }: { onClose: () => void; onSu
 
 // ─── Purchase Detail Modal ────────────────────────────────────────────────────
 function PurchaseDetailModal({ purchase, onClose, onViewReceipt }: { purchase: any; onClose: () => void; onViewReceipt: (url: string) => void }) {
+  // Parse AI result if stored on receipt
+  const aiResult = (() => {
+    try {
+      const raw = purchase.receipt?.aiResult;
+      return raw ? JSON.parse(raw) : null;
+    } catch { return null; }
+  })();
+
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4">
       <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onClose} />
@@ -386,6 +409,40 @@ function PurchaseDetailModal({ purchase, onClose, onViewReceipt }: { purchase: a
             <div><p className="text-muted-foreground text-xs">Amount Due</p><p className="font-bold text-red-500">{formatCurrency(purchase.amountDue)}</p></div>
             <div><p className="text-muted-foreground text-xs">Status</p><span className={cn(purchase.paymentStatus === "COMPLETED" ? "badge-success" : "badge-warning")}>{purchase.paymentStatus}</span></div>
           </div>
+
+          {/* AI Verification Result */}
+          {aiResult && (
+            <div className={cn("rounded-xl p-3 text-sm border", aiResult.verified ? "bg-green-50 dark:bg-green-950/20 border-green-200 dark:border-green-800" : "bg-red-50 dark:bg-red-950/20 border-red-200 dark:border-red-800")}>
+              <div className="flex items-center gap-2 mb-1.5">
+                <Sparkles className={cn("w-4 h-4", aiResult.verified ? "text-green-600" : "text-red-500")} />
+                <p className={cn("font-semibold text-xs", aiResult.verified ? "text-green-700 dark:text-green-400" : "text-red-600 dark:text-red-400")}>
+                  {aiResult.verified ? `✅ AI Verified (${aiResult.confidence}% confidence)` : `⚠️ Receipt Mismatch (${aiResult.confidence}% confidence)`}
+                </p>
+              </div>
+              <p className="text-xs text-muted-foreground">{aiResult.message}</p>
+              {aiResult.mismatches?.length > 0 && (
+                <div className="mt-2 space-y-1">
+                  <p className="text-xs font-semibold text-red-600">Mismatches found:</p>
+                  {aiResult.mismatches.map((m: any, i: number) => (
+                    <div key={i} className="text-xs bg-red-100 dark:bg-red-900/20 rounded-lg px-2 py-1.5">
+                      <span className="font-medium">{m.item}</span>
+                      <span className="text-muted-foreground ml-1">— {m.issue.replace(/_/g, " ")}</span>
+                      {m.issue === "NOT_FOUND" && <span className="ml-1 text-red-500 font-medium">(not on receipt)</span>}
+                      {m.issue === "WRONG_PRICE" && m.claimedUnitPrice && (
+                        <span className="ml-1 text-muted-foreground">claimed {formatCurrency(m.claimedUnitPrice)} vs found {m.foundUnitPrice ? formatCurrency(m.foundUnitPrice) : "unknown"}</span>
+                      )}
+                      {m.issue === "WRONG_QTY" && (
+                        <span className="ml-1 text-muted-foreground">claimed {m.claimedQty} vs found {m.foundQty ?? "unknown"}</span>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+              {aiResult.suggestions?.length > 0 && !aiResult.verified && (
+                <p className="text-xs text-muted-foreground mt-1.5 italic">{aiResult.suggestions.join("; ")}</p>
+              )}
+            </div>
+          )}
 
           <div>
             <p className="font-semibold text-sm mb-2">Items ({purchase.items?.length})</p>
@@ -409,9 +466,14 @@ function PurchaseDetailModal({ purchase, onClose, onViewReceipt }: { purchase: a
                       <p className="font-medium text-green-700 dark:text-green-400">{formatCurrency(inst.amount)}</p>
                       <p className="text-xs text-muted-foreground">{formatDate(inst.paymentDate)} • {inst.paymentMethod?.replace(/_/g," ")}</p>
                     </div>
-                    <div className="text-right">
-                      {inst.verifiedByAi && <span className="badge-info text-[10px]"><Sparkles className="w-2.5 h-2.5 inline mr-0.5" />AI Verified</span>}
-                      {inst.receipt?.fileUrl && <button onClick={() => onViewReceipt(inst.receipt.fileUrl)} className="text-xs text-blue-600 hover:underline block mt-1">View receipt</button>}
+                    <div className="text-right flex flex-col items-end gap-1">
+                      {inst.verifiedByAi && <span className="badge-info text-[10px] flex items-center gap-0.5"><Sparkles className="w-2.5 h-2.5" />AI Verified</span>}
+                      {!inst.verifiedByAi && inst.receipt?.fileUrl && <span className="text-[10px] text-amber-500 font-medium">⚠ Not verified</span>}
+                      {inst.receipt?.fileUrl && (
+                        <button onClick={() => onViewReceipt(inst.receipt.fileUrl)} className="text-xs text-blue-600 hover:underline flex items-center gap-0.5">
+                          <Eye className="w-3 h-3" /> View
+                        </button>
+                      )}
                     </div>
                   </div>
                 ))}
@@ -420,8 +482,11 @@ function PurchaseDetailModal({ purchase, onClose, onViewReceipt }: { purchase: a
           )}
 
           {purchase.receipt?.fileUrl && (
-            <button onClick={() => { onViewReceipt(purchase.receipt.fileUrl); onClose(); }} className="w-full py-2.5 text-sm bg-blue-50 dark:bg-blue-950/20 text-blue-600 rounded-xl hover:bg-blue-100 flex items-center justify-center gap-2">
-              <Eye className="w-4 h-4" /> View Original Receipt
+            <button onClick={() => { onViewReceipt(purchase.receipt.fileUrl); onClose(); }}
+              className="w-full py-2.5 text-sm bg-blue-50 dark:bg-blue-950/20 text-blue-600 rounded-xl hover:bg-blue-100 flex items-center justify-center gap-2">
+              <Eye className="w-4 h-4" />
+              {purchase.receipt.aiVerified ? "View Verified Receipt" : "View Receipt"}
+              {!purchase.receipt.aiVerified && <span className="text-[10px] text-amber-500 ml-1">⚠ Unverified</span>}
             </button>
           )}
         </div>

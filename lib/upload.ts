@@ -2,8 +2,16 @@ import path from "path";
 import fs from "fs/promises";
 import { v4 as uuidv4 } from "uuid";
 
-const ALLOWED_IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp", "image/gif"];
-const ALLOWED_DOC_TYPES = [...ALLOWED_IMAGE_TYPES, "application/pdf"];
+const ALLOWED_IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp", "image/gif", "image/bmp"];
+const ALLOWED_DOC_TYPES = [
+  ...ALLOWED_IMAGE_TYPES,
+  "application/pdf",
+  "application/msword",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  "application/vnd.ms-excel",
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  "text/plain",
+];
 const MAX_SIZE_MB = 10;
 
 // On Render free tier there is no persistent disk.
@@ -28,8 +36,13 @@ export async function saveUploadedFile(
   subDir: string,
   allowedTypes: string[] = ALLOWED_DOC_TYPES
 ): Promise<string> {
-  if (!allowedTypes.includes(file.type)) {
-    throw new Error(`File type "${file.type}" is not allowed. Accepted: ${ALLOWED_DOC_TYPES.join(", ")}`);
+  // Accept if explicitly allowed, or if it's any image/* or application/* type
+  const isAllowed = allowedTypes.includes(file.type) ||
+    file.type.startsWith("image/") ||
+    file.type === "application/octet-stream";
+
+  if (!isAllowed) {
+    throw new Error(`File type "${file.type}" is not allowed.`);
   }
   const sizeInMB = file.size / (1024 * 1024);
   if (sizeInMB > MAX_SIZE_MB) {

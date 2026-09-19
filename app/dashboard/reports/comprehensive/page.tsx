@@ -6,20 +6,13 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
   FileText, Download, Loader2, ChevronDown, ChevronUp, Receipt,
   TrendingUp, TrendingDown, DollarSign, Package, Zap, AlertCircle,
-  Building2, Filter, Calendar, Eye, ArrowLeft, Sparkles, CreditCard
+  Building2, ArrowLeft, Sparkles, CreditCard
 } from "lucide-react";
 import { cn, formatCurrency, formatDate } from "@/lib/utils";
 import { toast } from "sonner";
 import { useRouter } from "next/navigation";
 import { ReceiptViewModal } from "@/components/purchases/receipt-view-modal";
-
-const PERIODS = [
-  { value: "day", label: "Today" },
-  { value: "week", label: "This Week" },
-  { value: "month", label: "This Month" },
-  { value: "year", label: "This Year" },
-  { value: "custom", label: "Custom" },
-];
+import { PeriodSelector, usePeriodDates, type PeriodState } from "@/components/reports/period-selector";
 
 function ReceiptIcon({ receipt, onView }: { receipt: any; onView: (url: string) => void }) {
   if (!receipt?.fileUrl) return null;
@@ -159,13 +152,17 @@ function SectionTable({ title, icon: Icon, iconColor, items, columns, emptyText 
 }
 
 export default function ComprehensiveReportPage() {
-  const [period, setPeriod] = useState("month");
-  const [startDate, setStartDate] = useState("");
-  const [endDate, setEndDate] = useState("");
+  const [ps, setPs] = useState<PeriodState>({
+    period: "month", startDate: "", endDate: "",
+    year: String(new Date().getFullYear()),
+    month: String(new Date().getMonth() + 1).padStart(2, "0"),
+  });
   const [projectId, setProjectId] = useState("");
   const [downloading, setDownloading] = useState("");
   const [viewReceiptUrl, setViewReceiptUrl] = useState("");
   const router = useRouter();
+
+  const { period: apiPeriod, startDate: apiStart, endDate: apiEnd } = usePeriodDates(ps);
 
   const { data: projectsData } = useQuery({
     queryKey: ["projects-list"],
@@ -173,12 +170,12 @@ export default function ComprehensiveReportPage() {
   });
 
   const { data: report, isLoading } = useQuery({
-    queryKey: ["comprehensive-report", period, startDate, endDate, projectId],
+    queryKey: ["comprehensive-report", projectId, apiPeriod, apiStart, apiEnd],
     queryFn: async () => {
-      const p = new URLSearchParams({ period });
+      const p = new URLSearchParams({ period: apiPeriod });
       if (projectId) p.set("projectId", projectId);
-      if (startDate) p.set("startDate", startDate);
-      if (endDate) p.set("endDate", endDate);
+      if (apiStart) p.set("startDate", apiStart);
+      if (apiEnd) p.set("endDate", apiEnd);
       const r = await fetch(`/api/reports/comprehensive?${p}`);
       if (!r.ok) throw new Error("Failed to load report");
       return r.json();
@@ -188,19 +185,18 @@ export default function ComprehensiveReportPage() {
   const handleDownload = async (fmt: "pdf" | "excel" | "word") => {
     setDownloading(fmt);
     try {
-      const p = new URLSearchParams({ format: fmt, period, type: "comprehensive" });
+      const p = new URLSearchParams({ format: fmt, period: apiPeriod, type: "comprehensive" });
       if (projectId) p.set("projectId", projectId);
-      if (startDate) p.set("startDate", startDate);
-      if (endDate) p.set("endDate", endDate);
+      if (apiStart) p.set("startDate", apiStart);
+      if (apiEnd) p.set("endDate", apiEnd);
       const res = await fetch(`/api/reports/download?${p}`);
       if (!res.ok) throw new Error("Download failed");
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a"); a.href = url;
-      const ext = fmt === "excel" ? "xlsx" : fmt === "word" ? "doc" : "html";
-      a.download = `comprehensive-report-${period}-${Date.now()}.${ext}`;
+      a.download = `comprehensive-report-${Date.now()}.${fmt === "excel" ? "xlsx" : fmt === "word" ? "doc" : "html"}`;
       a.click(); URL.revokeObjectURL(url);
-      toast.success(`Report downloaded as ${fmt.toUpperCase()}`);
+      toast.success(`Downloaded as ${fmt.toUpperCase()}`);
     } catch (e: any) { toast.error(e.message); }
     finally { setDownloading(""); }
   };
@@ -214,7 +210,7 @@ export default function ComprehensiveReportPage() {
   const officeExpenses = report?.officeExpenses || [];
 
   return (
-    <div className="page-container pb-24 md:pb-8">
+    <div className="page-container">
       {/* Header */}
       <div className="flex items-center gap-3 mb-6">
         <button onClick={() => router.back()} className="p-2 hover:bg-muted rounded-xl transition-colors">
@@ -240,32 +236,16 @@ export default function ComprehensiveReportPage() {
       </div>
 
       {/* Filters */}
-      <div className="flex flex-wrap gap-3 mb-6 p-4 bg-card border border-border rounded-2xl">
-        <select value={projectId} onChange={e => setProjectId(e.target.value)} className="input-styled flex-1 min-w-40">
-          <option value="">All Projects</option>
-          {(projectsData?.projects || []).map((p: any) => <option key={p.id} value={p.id}>{p.name}</option>)}
-        </select>
-        <div className="flex gap-1 bg-muted p-1 rounded-xl">
-          {PERIODS.map(p => (
-            <button key={p.value} onClick={() => setPeriod(p.value)}
-              className={cn("px-3 py-1.5 rounded-lg text-xs font-medium whitespace-nowrap transition-all",
-                period === p.value ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground")}>
-              {p.label}
-            </button>
-          ))}
-        </div>
-        {period === "custom" && (
-          <>
-            <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} className="input-styled text-sm" />
-            <input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} className="input-styled text-sm" />
-          </>
-        )}
-      </div>
+      <PeriodSelector
+        state={ps} onChange={v => setPs(p => ({ ...p, ...v }))}
+        projects={projectsData?.projects || []}
+        selectedProject={projectId} onProjectChange={setProjectId}
+      />
 
       {isLoading ? (
         <div className="flex items-center justify-center py-24"><Loader2 className="w-8 h-8 animate-spin text-primary" /></div>
       ) : (
-        <div className="space-y-6">
+        <div className="space-y-6 mt-4">
           {/* Summary cards */}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
             {[

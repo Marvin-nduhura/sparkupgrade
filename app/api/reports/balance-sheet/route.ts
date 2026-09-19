@@ -13,26 +13,28 @@ export async function GET(req: NextRequest) {
     const url = new URL(req.url);
     const asOfStr = url.searchParams.get("asOf") || new Date().toISOString().split("T")[0];
     const asOf = endOfDay(parseISO(asOfStr));
-
     const dateBefore = { lte: asOf };
 
     const [
       totalReceived,
-      purchasesTotal, purchasesPaid, purchasesDue,
-      utilitiesTotal, chargesTotal, otherExpTotal, officeExpTotal,
+      purchasesTotal,
+      purchasesDue,
+      utilitiesTotal,
+      chargesTotal,
+      otherExpTotal,
+      officeExpTotal,
       projectsData,
     ] = await Promise.all([
       prisma.moneyReceived.aggregate({ where: { receivedDate: dateBefore }, _sum: { amount: true } }),
       prisma.purchase.aggregate({ where: { purchaseDate: dateBefore }, _sum: { totalAmount: true, amountPaid: true, amountDue: true } }),
-      prisma.installment.aggregate({ where: { paymentDate: dateBefore }, _sum: { amount: true } }),
       prisma.purchase.aggregate({ where: { purchaseDate: dateBefore, paymentStatus: "PARTIAL" }, _sum: { amountDue: true } }),
       prisma.utility.aggregate({ where: { usageDate: dateBefore }, _sum: { amount: true } }),
       prisma.siteCharge.aggregate({ where: { chargeDate: dateBefore }, _sum: { amount: true } }),
       prisma.otherExpense.aggregate({ where: { expenseDate: dateBefore }, _sum: { amount: true } }),
       prisma.officeExpense.aggregate({ where: { expenseDate: dateBefore }, _sum: { amount: true } }),
       prisma.project.findMany({
-        select: { id: true, name: true, status: true },
-        where: { createdAt: dateBefore },
+        select: { id: true, name: true, status: true, location: true },
+        orderBy: { name: "asc" },
       }),
     ]);
 
@@ -46,8 +48,45 @@ export async function GET(req: NextRequest) {
     const netPosition = totalIncome - totalExpenditure;
     const outstandingPayables = purchasesDue._sum.amountDue || 0;
 
+    // Per-project breakdown
+    const projectBreakdowns = await Promise.all(
+      projectsData.map(async (proj) => {
+        const [recv, purch, util, charge, other] = await Promise.all([
+          prisma.moneyReceived.aggregate({ where: { projectId: proj.id, receivedDate: dateBefore }, _sum: { amount: true } }),
+          prisma.purchase.aggregate({ where: { projectId: proj.id, purchaseDate: dateBefore }, _sum: { totalAmount: true, amountPaid: true, amountDue: true }, _count: true }),
+          prisma.utility.aggregate({ where: { projectId: proj.id, usageDate: dateBefore }, _sum: { amount: true } }),
+          prisma.siteCharge.aggregate({ where: { projectId: proj.id, chargeDate: dateBefore }, _sum: { amount: true } }),
+          prisma.otherExpense.aggregate({ where: { projectId: proj.id, expenseDate: dateBefore }, _sum: { amount: true } }),
+        ]);
+
+        const received = recv._sum.amount || 0;
+        const purchases = purch._sum.totalAmount || 0;
+        const utilities = util._sum.amount || 0;
+        const charges = charge._sum.amount || 0;
+        const otherExp = other._sum.amount || 0;
+        const spent = purchases + utilities + charges + otherExp;
+        const balance = received - spent;
+
+        return {
+          id: proj.id,
+          name: proj.name,
+          status: proj.status,
+          location: proj.location,
+          received,
+          purchases,
+          utilities,
+          charges,
+          otherExp,
+          spent,
+          balance,
+          amountDue: purch._sum.amountDue || 0,
+          purchaseCount: purch._count,
+        };
+      })
+    );
+
     const income = [
-      { label: "Funds Received from Projects", amount: totalIncome, isSubtotal: false },
+      { label: "Funds Received from Projects", amount: totalIncome },
       { label: "TOTAL INCOME", amount: totalIncome, isTotal: true },
     ];
 
@@ -62,7 +101,10 @@ export async function GET(req: NextRequest) {
     ].filter(r => r.amount > 0);
 
     return NextResponse.json({
-      balanceSheet: { income, expenditure, netPosition, outstandingPayables, asOf, projectCount: projectsData.length },
+      balanceSheet: {
+        income, expenditure, netPosition, outstandingPayables,
+        asOf, projectCount: projectsData.length, projectBreakdowns,
+      },
     });
   } catch (err) { return handleApiError(err); }
 }

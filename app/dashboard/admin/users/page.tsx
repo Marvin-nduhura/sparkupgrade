@@ -81,7 +81,7 @@ export default function UsersPage() {
   const { register, handleSubmit, formState: { errors }, reset } = useForm<CreateForm>({ resolver: zodResolver(createSchema), defaultValues: { role: "SITE_MANAGER" } });
 
   return (
-    <div className="page-container pb-24 md:pb-8">
+    <div className="page-container">
       <div className="section-header">
         <div>
           <h1 className="text-2xl font-display font-bold">User Management</h1>

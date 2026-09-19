@@ -60,7 +60,7 @@ export default function RequestsPage() {
   const statusIcons: Record<string, React.ElementType> = { PENDING: Clock, APPROVED: CheckCircle2, REJECTED: AlertCircle, REVIEWED: Eye };
 
   return (
-    <div className="page-container pb-24 md:pb-8">
+    <div className="page-container">
       <div className="section-header">
         <div>
           <h1 className="text-2xl font-display font-bold">Requests</h1>

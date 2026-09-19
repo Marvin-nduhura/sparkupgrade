@@ -46,7 +46,7 @@ export default function InventoryUsagePage() {
   const openModal = (type: "USE" | "RESTOCK") => { setModalType(type); setModalOpen(true); };
 
   return (
-    <div className="page-container pb-24 md:pb-8">
+    <div className="page-container">
       {/* Header with back button */}
       <div className="flex items-center gap-3 mb-6">
         <button onClick={() => router.back()} className="p-2 hover:bg-muted rounded-xl transition-colors">

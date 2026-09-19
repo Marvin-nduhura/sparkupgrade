@@ -5,7 +5,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Zap, AlertCircle, MoreHorizontal, Plus, Search, X,
-  Loader2, ChevronLeft, ChevronRight, Eye, Camera, Upload
+  Loader2, ChevronLeft, ChevronRight, Eye, Camera, Upload, Sparkles, AlertTriangle
 } from "lucide-react";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
@@ -61,7 +61,7 @@ export default function ExpensesPage() {
   const openCreate = (t: "utility" | "charge" | "other") => { setCreateType(t); setCreateOpen(true); };
 
   return (
-    <div className="page-container pb-24 md:pb-8">
+    <div className="page-container">
       <div className="section-header">
         <div>
           <h1 className="text-2xl font-bold">Site Expenses</h1>
@@ -145,9 +145,16 @@ export default function ExpensesPage() {
                     <td><span className={cn("text-[10px] font-medium px-2 py-0.5 rounded-full", typeColor)}>{exp._type || "other"}</span></td>
                     <td className="text-right font-bold">{formatCurrency(exp.amount)}</td>
                     <td className="text-center">
-                      {exp.receipt?.fileUrl
-                        ? <button onClick={() => setViewReceipt(exp.receipt.fileUrl)} className="p-1.5 hover:bg-blue-50 dark:hover:bg-blue-950/20 rounded-lg text-blue-600 transition-colors mx-auto block"><Eye className="w-3.5 h-3.5" /></button>
-                        : <span className="text-xs text-muted-foreground">—</span>}
+                      {exp.receipt?.fileUrl ? (
+                        <button
+                          onClick={() => setViewReceipt(exp.receipt.fileUrl)}
+                          className="p-1.5 hover:bg-blue-50 dark:hover:bg-blue-950/20 rounded-lg transition-colors mx-auto flex items-center gap-1"
+                        >
+                          <Eye className="w-3.5 h-3.5 text-blue-600" />
+                          {exp.receipt?.aiVerified === true && <Sparkles className="w-3 h-3 text-green-500" />}
+                          {exp.receipt?.aiVerified === false && exp.receipt?.aiResult && <AlertTriangle className="w-3 h-3 text-amber-500" />}
+                        </button>
+                      ) : <span className="text-xs text-muted-foreground">—</span>}
                     </td>
                   </motion.tr>
                 );
@@ -226,6 +233,15 @@ function AddExpenseModal({ type, projects, onClose, onSuccess }: {
       if (receiptFile) fd.append("receipt", receiptFile);
       const res = await fetch("/api/finances/expenses", { method: "POST", body: fd });
       if (!res.ok) { const e = await res.json(); throw new Error(e.error || "Failed to record"); }
+      const result = await res.json();
+      if (result.aiVerification) {
+        const ai = result.aiVerification;
+        if (ai.verified) {
+          toast.success(`✅ Receipt verified by AI (${ai.confidence}% confidence)`);
+        } else if (ai.confidence > 0) {
+          toast.warning(`⚠️ Receipt mismatch detected — admins notified. ${ai.message}`, { duration: 6000 });
+        }
+      }
       onSuccess();
     } catch (e: any) { toast.error(e.message); }
     finally { setLoading(false); }
@@ -303,9 +319,21 @@ function AddExpenseModal({ type, projects, onClose, onSuccess }: {
                 <Camera className="w-3.5 h-3.5" /> Camera
               </button>
             </div>
-            <input ref={fileRef} type="file" accept="image/*,application/pdf" className="hidden" onChange={handleFile} />
+            <input ref={fileRef} type="file" accept="image/*,application/pdf,.doc,.docx,.xls,.xlsx" className="hidden" onChange={handleFile} />
             <input ref={cameraRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={handleFile} />
-            {preview && <img src={preview} alt="Receipt" className="mt-2 h-24 w-full object-cover rounded-xl" />}
+            {receiptFile && (
+              preview
+                ? <div className="mt-2 relative">
+                    <img src={preview} alt="Receipt" className="h-24 w-full object-cover rounded-xl" />
+                    <div className="absolute top-1 right-1 bg-black/50 text-white text-[9px] px-1.5 py-0.5 rounded-full flex items-center gap-0.5">
+                      <Sparkles className="w-2 h-2" />AI will verify
+                    </div>
+                  </div>
+                : <div className="mt-2 h-14 bg-muted/50 rounded-xl border border-border flex items-center justify-center gap-2 text-xs text-muted-foreground">
+                    <Upload className="w-4 h-4" />{receiptFile.name}
+                    <span className="text-[10px] text-amber-500 ml-1">(AI skips non-images)</span>
+                  </div>
+            )}
           </div>
           <div className="flex gap-3 pt-2">
             <button type="button" onClick={onClose} className="flex-1 py-3 rounded-xl border border-border text-sm hover:bg-muted transition-colors">Cancel</button>

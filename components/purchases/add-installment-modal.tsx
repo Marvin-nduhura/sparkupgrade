@@ -40,6 +40,15 @@ export function AddInstallmentModal({ purchase, onClose, onSuccess }: { purchase
       if (receiptFile) formData.append("receipt", receiptFile);
       const res = await fetch("/api/installments", { method: "POST", body: formData });
       if (!res.ok) { const e = await res.json(); throw new Error(e.error); }
+      const result = await res.json();
+      if (result.aiVerification) {
+        const ai = result.aiVerification;
+        if (ai.verified) {
+          toast.success(`✅ Receipt verified by AI (${ai.confidence}% confidence)`);
+        } else if (ai.confidence > 0) {
+          toast.warning(`⚠️ Receipt mismatch — admins notified. ${ai.message}`, { duration: 6000 });
+        }
+      }
       toast.success("Payment recorded!");
       onSuccess();
     } catch (e: any) { toast.error(e.message); }
@@ -92,7 +101,7 @@ export function AddInstallmentModal({ purchase, onClose, onSuccess }: { purchase
                 <Camera className="w-3.5 h-3.5" /> Camera
               </button>
             </div>
-            <input ref={fileRef} type="file" accept="image/*,application/pdf" className="hidden" onChange={handleFile} />
+            <input ref={fileRef} type="file" accept="image/*,application/pdf,.doc,.docx,.xls,.xlsx" className="hidden" onChange={handleFile} />
             <input ref={cameraRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={handleFile} />
             {receiptPreview && (
               <div className="mt-2 relative">

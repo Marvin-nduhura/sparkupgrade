@@ -137,7 +137,7 @@ export default function InventoryPage() {
   const lowStockCount = data?.lowStockCount || 0;
 
   return (
-    <div className="page-container pb-24 md:pb-8">
+    <div className="page-container">
       {/* Header */}
       <div className="section-header">
         <div>

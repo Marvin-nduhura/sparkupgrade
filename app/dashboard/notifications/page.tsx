@@ -48,7 +48,7 @@ export default function NotificationsPage() {
   const unreadCount = data?.unreadCount || 0;
 
   return (
-    <div className="page-container pb-24 md:pb-8">
+    <div className="page-container">
       <div className="section-header">
         <div>
           <h1 className="text-2xl font-display font-bold">Notifications</h1>

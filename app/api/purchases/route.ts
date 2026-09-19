@@ -3,10 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { createAuditLog } from "@/lib/audit";
-import { verifyReceipt } from "@/lib/gemini";
-import path from "path";
-import fs from "fs/promises";
-import { v4 as uuidv4 } from "uuid";
+import { saveReceiptWithAI } from "@/lib/receipt";
 
 export async function GET(req: NextRequest) {
   try {
@@ -100,39 +97,30 @@ export async function POST(req: NextRequest) {
     let receiptId: string | undefined;
     let aiVerification: any = null;
 
-    if (receiptFile) {
-      const uploadDir = path.join(process.cwd(), "public", "uploads", "receipts");
-      await fs.mkdir(uploadDir, { recursive: true });
-      const ext = receiptFile.name.split(".").pop();
-      const filename = `${uuidv4()}.${ext}`;
-      const buffer = Buffer.from(await receiptFile.arrayBuffer());
-      await fs.writeFile(path.join(uploadDir, filename), buffer);
-
-      // AI Verification
-      const base64 = buffer.toString("base64");
-      aiVerification = await verifyReceipt(
-        base64,
-        receiptFile.type,
-        items.map((i: any) => ({
-          name: i.itemName || i.name,
-          quantity: i.quantity,
-          unitPrice: i.unitPrice,
-          totalPrice: i.quantity * i.unitPrice,
-        }))
-      );
-
-      const receipt = await prisma.receipt.create({
-        data: {
-          fileUrl: `/uploads/receipts/${filename}`,
-          fileName: receiptFile.name,
-          fileType: receiptFile.type,
-          aiVerified: aiVerification.verified,
-          aiResult: JSON.stringify(aiVerification),
-          projectId,
-        },
-      });
-      receiptId = receipt.id;
-    }
+      if (receiptFile) {
+        try {
+          const project = await prisma.project.findUnique({ where: { id: projectId }, select: { name: true } });
+          const saved = await saveReceiptWithAI(receiptFile, {
+            projectId,
+            recordedById: session.user.id,
+            expenseName: items.map((i: any) => i.itemName || i.name).join(", "),
+            expenseAmount: totalAmount,
+            expenseType: "purchase",
+            items: items.map((i: any) => ({
+              name: i.itemName || i.name,
+              quantity: i.quantity,
+              unitPrice: i.unitPrice,
+              totalPrice: i.quantity * i.unitPrice,
+            })),
+            projectName: project?.name,
+            purchasedBy: session.user.name,
+          });
+          receiptId = saved.receiptId;
+          aiVerification = saved.aiVerification;
+        } catch (e: any) {
+          console.warn("Receipt save failed:", e.message);
+        }
+      }
 
     // Create purchase
     const purchase = await prisma.purchase.create({

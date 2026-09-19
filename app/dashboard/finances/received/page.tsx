@@ -56,7 +56,7 @@ export default function MoneyReceivedPage() {
   const canCreate = session?.user?.role === "SITE_MANAGER" || session?.user?.role === "SYSTEM_ADMIN";
 
   return (
-    <div className="page-container pb-24 md:pb-8">
+    <div className="page-container">
       <div className="section-header">
         <div>
           <h1 className="text-2xl font-display font-bold">Money Received</h1>
