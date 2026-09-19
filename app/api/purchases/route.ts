@@ -165,7 +165,7 @@ export async function POST(req: NextRequest) {
                 });
               }
 
-              // Increase inventory
+              // Increase inventory (auto-restock on purchase)
               await prisma.inventoryItem.update({
                 where: { id: inventoryItem.id },
                 data: { currentQuantity: { increment: item.quantity } },
@@ -178,6 +178,19 @@ export async function POST(req: NextRequest) {
                 },
                 create: { projectId, itemId: inventoryItem.id, quantity: item.quantity },
                 update: { quantity: { increment: item.quantity } },
+              });
+
+              // Log restock in usage history
+              await prisma.inventoryUsage.create({
+                data: {
+                  itemId: inventoryItem.id,
+                  projectId,
+                  recordedById: session.user.id,
+                  quantity: item.quantity,
+                  type: "RESTOCK",
+                  description: `Auto-restocked via purchase`,
+                  usedDate: new Date(purchaseDate),
+                },
               });
 
               return {

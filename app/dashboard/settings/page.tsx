@@ -1,13 +1,13 @@
 "use client";
 
 import { useState } from "react";
-import { useSession } from "next-auth/react";
+import { useSession, signOut } from "next-auth/react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Settings, User, Palette, Bell, Shield, Building2, CreditCard,
   Eye, EyeOff, Save, Loader2, Moon, Sun, Monitor, Check,
-  Phone, Mail, Lock, Camera, Upload, X
+  Phone, Mail, Lock, Camera, Upload, X, LogOut
 } from "lucide-react";
 import { useForm } from "react-hook-form";
 import { useTheme } from "next-themes";
@@ -46,7 +46,12 @@ export default function SettingsPage() {
           <h1 className="text-2xl font-display font-bold">Settings</h1>
           <p className="text-sm text-muted-foreground">Manage your account and preferences</p>
         </div>
-        <Settings className="w-5 h-5 text-muted-foreground" />
+        <motion.button
+          whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}
+          onClick={() => signOut({ callbackUrl: "/login" })}
+          className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold text-red-500 border border-red-200 dark:border-red-800 hover:bg-red-50 dark:hover:bg-red-950/20 transition-all">
+          <LogOut className="w-4 h-4" /> Sign Out
+        </motion.button>
       </div>
 
       <div className="flex flex-col sm:flex-row gap-6">

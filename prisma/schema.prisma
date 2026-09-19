@@ -134,6 +134,8 @@ model User {
   moneyTransfers     MoneyTransfer[]    @relation("SentBy")
   receivedTransfers  MoneyTransfer[]    @relation("ReceivedBy")
   sessions           Session[]
+  usageRecords       InventoryUsage[]   @relation("UsageRecorder")
+  dailyReports       DailyReport[]      @relation("DailyReportAuthor")
 
   @@map("users")
 }
@@ -189,6 +191,7 @@ model Project {
   otherExpenses OtherExpense[]
   notifications Notification[]
   auditLogs   AuditLog[]
+  dailyReports DailyReport[]
 
   @@map("projects")
 }
@@ -289,17 +292,35 @@ model ProjectInventory {
 }
 
 model InventoryUsage {
-  id          String   @id @default(cuid())
-  itemId      String
-  projectId   String?
-  quantity    Float
-  usedDate    DateTime @default(now())
-  description String?
-  createdAt   DateTime @default(now())
+  id           String   @id @default(cuid())
+  itemId       String
+  projectId    String?
+  recordedById String?
+  quantity     Float
+  usedDate     DateTime @default(now())
+  description  String?
+  type         String   @default("USE") // USE | RESTOCK
+  createdAt    DateTime @default(now())
 
-  item        InventoryItem @relation(fields: [itemId], references: [id])
+  item         InventoryItem @relation(fields: [itemId], references: [id])
+  recordedBy   User?         @relation("UsageRecorder", fields: [recordedById], references: [id])
 
   @@map("inventory_usage")
+}
+
+model DailyReport {
+  id          String   @id @default(cuid())
+  projectId   String
+  authorId    String
+  reportDate  DateTime @default(now())
+  summary     String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  project     Project  @relation(fields: [projectId], references: [id])
+  author      User     @relation("DailyReportAuthor", fields: [authorId], references: [id])
+
+  @@map("daily_reports")
 }
 
 model Purchase {

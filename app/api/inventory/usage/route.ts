@@ -15,12 +15,14 @@ export async function GET(req: NextRequest) {
     const url = new URL(req.url);
     const itemId = url.searchParams.get("itemId") || "";
     const projectId = url.searchParams.get("projectId") || "";
+    const type = url.searchParams.get("type") || ""; // USE | RESTOCK | ""
     const page = parseInt(url.searchParams.get("page") || "1");
     const limit = parseInt(url.searchParams.get("limit") || "20");
     const skip = (page - 1) * limit;
 
     const where: any = {};
     if (itemId) where.itemId = itemId;
+    if (type) where.type = type;
     if (projectId) where.projectId = projectId;
 
     if (session.user.role === "SITE_MANAGER") {
@@ -34,7 +36,10 @@ export async function GET(req: NextRequest) {
         skip,
         take: limit,
         orderBy: { usedDate: "desc" },
-        include: { item: { select: { name: true, unit: true } } },
+        include: {
+          item: { select: { name: true, unit: true, currentQuantity: true } },
+          recordedBy: { select: { name: true } },
+        },
       }),
       prisma.inventoryUsage.count({ where }),
     ]);
@@ -53,9 +58,13 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Accountants cannot record usage" }, { status: 403 });
     }
 
-    const { itemId, projectId, quantity, description, usedDate } = await req.json();
+    const { itemId, projectId, quantity, description, usedDate, type = "USE" } = await req.json();
+
     if (!itemId || !quantity || quantity <= 0) {
       return NextResponse.json({ error: "Item and a valid quantity are required" }, { status: 400 });
+    }
+    if (!["USE", "RESTOCK"].includes(type)) {
+      return NextResponse.json({ error: "Type must be USE or RESTOCK" }, { status: 400 });
     }
 
     if (session.user.role === "SITE_MANAGER" && projectId) {
@@ -67,7 +76,8 @@ export async function POST(req: NextRequest) {
 
     const item = await prisma.inventoryItem.findUnique({ where: { id: itemId } });
     if (!item) return NextResponse.json({ error: "Item not found" }, { status: 404 });
-    if (item.currentQuantity < quantity) {
+
+    if (type === "USE" && item.currentQuantity < quantity) {
       return NextResponse.json(
         { error: `Not enough stock. Available: ${item.currentQuantity} ${item.unit}` },
         { status: 400 }
@@ -78,30 +88,48 @@ export async function POST(req: NextRequest) {
       data: {
         itemId,
         projectId: projectId || undefined,
+        recordedById: session.user.id,
         quantity,
         description,
+        type,
         usedDate: usedDate ? new Date(usedDate) : new Date(),
       },
     });
 
+    // Adjust inventory quantity
     const updated = await prisma.inventoryItem.update({
       where: { id: itemId },
-      data: { currentQuantity: { decrement: quantity } },
+      data: {
+        currentQuantity: type === "USE"
+          ? { decrement: quantity }
+          : { increment: quantity },
+      },
     });
 
     if (projectId) {
-      await prisma.projectInventory.updateMany({
-        where: { projectId, itemId },
-        data: { quantity: { decrement: quantity } },
-      });
+      if (type === "USE") {
+        await prisma.projectInventory.updateMany({
+          where: { projectId, itemId },
+          data: { quantity: { decrement: quantity } },
+        });
+      } else {
+        // Upsert project inventory for restock
+        await prisma.projectInventory.upsert({
+          where: { projectId_itemId: { projectId, itemId } },
+          update: { quantity: { increment: quantity } },
+          create: { projectId, itemId, quantity },
+        });
+      }
     }
 
-    await maybeNotifyLowStock({
-      name: updated.name,
-      currentQuantity: updated.currentQuantity,
-      minimumQuantity: updated.minimumQuantity,
-      unit: updated.unit,
-    });
+    if (type === "USE") {
+      await maybeNotifyLowStock({
+        name: updated.name,
+        currentQuantity: updated.currentQuantity,
+        minimumQuantity: updated.minimumQuantity,
+        unit: updated.unit,
+      });
+    }
 
     await createAuditLog({
       userId: session.user.id,
@@ -109,7 +137,7 @@ export async function POST(req: NextRequest) {
       action: "UPDATE",
       resource: "InventoryUsage",
       resourceId: usage.id,
-      details: { item: item.name, quantity },
+      details: { item: item.name, quantity, type },
     });
 
     return NextResponse.json({ usage, remaining: updated.currentQuantity }, { status: 201 });

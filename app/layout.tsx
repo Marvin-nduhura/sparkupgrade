@@ -4,6 +4,7 @@ import { ThemeProvider } from "@/components/providers/theme-provider";
 import { Toaster } from "sonner";
 import { QueryProvider } from "@/components/providers/query-provider";
 import { AuthProvider } from "@/components/providers/auth-provider";
+import { PWAInstallPrompt } from "@/components/pwa/install-prompt";
 
 export const metadata: Metadata = {
   title: {
@@ -63,6 +64,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               disableTransitionOnChange={false}
             >
               {children}
+              <PWAInstallPrompt />
               <Toaster
                 position="top-right"
                 richColors
