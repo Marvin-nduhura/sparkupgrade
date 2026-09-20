@@ -130,6 +130,7 @@ model User {
   notifications      UserNotification[]
   auditLogs          AuditLog[]
   officeExpenses     OfficeExpense[]
+  officeIncome       OfficeIncome[]
   projectImages      ProjectImage[]
   moneyTransfers     MoneyTransfer[]    @relation("SentBy")
   receivedTransfers  MoneyTransfer[]    @relation("ReceivedBy")
@@ -396,6 +397,7 @@ model Receipt {
   utilities   Utility[]
   otherExpenses OtherExpense[]
   officeExpenses OfficeExpense[]
+  officeIncome   OfficeIncome[]
 
   @@map("receipts")
 }
@@ -609,4 +611,23 @@ model CompanySettings {
   updatedAt       DateTime @updatedAt
 
   @@map("company_settings")
+}
+
+model OfficeIncome {
+  id            String        @id @default(cuid())
+  recordedById  String
+  amount        Float
+  source        String
+  paymentMethod PaymentMethod @default(CASH)
+  receivedDate  DateTime
+  description   String?
+  reference     String?
+  receiptId     String?
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  recordedBy    User    @relation(fields: [recordedById], references: [id])
+  receipt       Receipt? @relation(fields: [receiptId], references: [id])
+
+  @@map("office_income")
 }

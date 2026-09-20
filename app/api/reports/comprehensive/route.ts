@@ -33,74 +33,28 @@ export async function GET(req: NextRequest) {
     const before = { lt: start };
 
     const [
-      received, purchases, utilities, charges, otherExpenses, officeExpenses,
-      recvBefore, purchBefore, utilBefore, chargeBefore, otherBefore, officeBefore,
+      received, purchases, utilities, charges, otherExpenses, officeExpenses, officeIncome,
+      recvBefore, purchBefore, utilBefore, chargeBefore, otherBefore, officeBefore, officeIncomeBefore,
     ] = await Promise.all([
-      prisma.moneyReceived.findMany({
-        where: { projectId: { in: ids }, receivedDate: dateWhere },
-        include: {
-          project: { select: { name: true } },
-          receivedBy: { select: { name: true } },
-        },
-        orderBy: { receivedDate: "desc" },
-      }),
-      prisma.purchase.findMany({
-        where: { projectId: { in: ids }, purchaseDate: dateWhere },
-        include: {
-          project: { select: { name: true } },
-          purchasedBy: { select: { name: true } },
-          items: { include: { item: { select: { name: true, unit: true } } } },
-          installments: {
-            orderBy: { paymentDate: "asc" },
-            include: {
-              receipt: { select: { id: true, fileUrl: true, fileName: true, fileType: true, aiVerified: true } },
-            },
-          },
-          receipt: { select: { id: true, fileUrl: true, fileName: true, fileType: true, aiVerified: true } },
-        },
-        orderBy: { purchaseDate: "desc" },
-      }),
-      prisma.utility.findMany({
-        where: { projectId: { in: ids }, usageDate: dateWhere },
-        include: {
-          project: { select: { name: true } },
-          receipt: { select: { id: true, fileUrl: true, fileName: true, fileType: true, aiVerified: true } },
-        },
-        orderBy: { usageDate: "desc" },
-      }),
-      prisma.siteCharge.findMany({
-        where: { projectId: { in: ids }, chargeDate: dateWhere },
-        include: {
-          project: { select: { name: true } },
-          receipt: { select: { id: true, fileUrl: true, fileName: true, fileType: true, aiVerified: true } },
-        },
-        orderBy: { chargeDate: "desc" },
-      }),
-      prisma.otherExpense.findMany({
-        where: { projectId: { in: ids }, expenseDate: dateWhere },
-        include: {
-          project: { select: { name: true } },
-          receipt: { select: { id: true, fileUrl: true, fileName: true, fileType: true, aiVerified: true } },
-        },
-        orderBy: { expenseDate: "desc" },
-      }),
-      prisma.officeExpense.findMany({
-        where: { expenseDate: dateWhere },
-        include: {
-          user: { select: { name: true } },
-          receipt: { select: { id: true, fileUrl: true, fileName: true, fileType: true, aiVerified: true } },
-        },
-        orderBy: { expenseDate: "desc" },
-      }),
+      prisma.moneyReceived.findMany({ where: { projectId: { in: ids }, receivedDate: dateWhere }, include: { project: { select: { name: true } }, receivedBy: { select: { name: true } } }, orderBy: { receivedDate: "desc" } }),
+      prisma.purchase.findMany({ where: { projectId: { in: ids }, purchaseDate: dateWhere }, include: { project: { select: { name: true } }, purchasedBy: { select: { name: true } }, items: { include: { item: { select: { name: true, unit: true } } } }, installments: { orderBy: { paymentDate: "asc" }, include: { receipt: { select: { id: true, fileUrl: true, fileName: true, fileType: true, aiVerified: true } } } }, receipt: { select: { id: true, fileUrl: true, fileName: true, fileType: true, aiVerified: true } } }, orderBy: { purchaseDate: "desc" } }),
+      prisma.utility.findMany({ where: { projectId: { in: ids }, usageDate: dateWhere }, include: { project: { select: { name: true } }, receipt: { select: { id: true, fileUrl: true, fileName: true, fileType: true, aiVerified: true } } }, orderBy: { usageDate: "desc" } }),
+      prisma.siteCharge.findMany({ where: { projectId: { in: ids }, chargeDate: dateWhere }, include: { project: { select: { name: true } }, receipt: { select: { id: true, fileUrl: true, fileName: true, fileType: true, aiVerified: true } } }, orderBy: { chargeDate: "desc" } }),
+      prisma.otherExpense.findMany({ where: { projectId: { in: ids }, expenseDate: dateWhere }, include: { project: { select: { name: true } }, receipt: { select: { id: true, fileUrl: true, fileName: true, fileType: true, aiVerified: true } } }, orderBy: { expenseDate: "desc" } }),
+      prisma.officeExpense.findMany({ where: { expenseDate: dateWhere }, include: { user: { select: { name: true } }, receipt: { select: { id: true, fileUrl: true, fileName: true, fileType: true, aiVerified: true } } }, orderBy: { expenseDate: "desc" } }),
+      prisma.officeIncome.findMany({ where: { receivedDate: dateWhere }, include: { recordedBy: { select: { name: true } }, receipt: { select: { id: true, fileUrl: true, fileName: true, fileType: true, aiVerified: true } } }, orderBy: { receivedDate: "desc" } }),
       prisma.moneyReceived.aggregate({ where: { projectId: { in: ids }, receivedDate: before }, _sum: { amount: true } }),
       prisma.purchase.aggregate({ where: { projectId: { in: ids }, purchaseDate: before }, _sum: { totalAmount: true } }),
       prisma.utility.aggregate({ where: { projectId: { in: ids }, usageDate: before }, _sum: { amount: true } }),
       prisma.siteCharge.aggregate({ where: { projectId: { in: ids }, chargeDate: before }, _sum: { amount: true } }),
       prisma.otherExpense.aggregate({ where: { projectId: { in: ids }, expenseDate: before }, _sum: { amount: true } }),
       prisma.officeExpense.aggregate({ where: { expenseDate: before }, _sum: { amount: true } }),
+      prisma.officeIncome.aggregate({ where: { receivedDate: before }, _sum: { amount: true } }),
     ]);
 
-    const totalReceived = received.reduce((s, r) => s + r.amount, 0);
+    const totalProjectReceived = received.reduce((s, r) => s + r.amount, 0);
+    const totalOfficeIncome = officeIncome.reduce((s, o) => s + o.amount, 0);
+    const totalReceived = totalProjectReceived + totalOfficeIncome;
     const totalPurchases = purchases.reduce((s, p) => s + p.totalAmount, 0);
     const totalUtilities = utilities.reduce((s, u) => s + u.amount, 0);
     const totalCharges = charges.reduce((s, c) => s + c.amount, 0);
@@ -111,7 +65,7 @@ export async function GET(req: NextRequest) {
     const totalAmountPaid = purchases.reduce((s, p) => s + p.amountPaid, 0);
 
     const bbf =
-      (recvBefore._sum.amount || 0) -
+      ((recvBefore._sum.amount || 0) + (officeIncomeBefore._sum.amount || 0)) -
       ((purchBefore._sum.totalAmount || 0) + (utilBefore._sum.amount || 0) +
        (chargeBefore._sum.amount || 0) + (otherBefore._sum.amount || 0) + (officeBefore._sum.amount || 0));
     const closingBalance = bbf + totalReceived - totalSpent;
@@ -124,6 +78,8 @@ export async function GET(req: NextRequest) {
       summary: {
         bbf,
         totalReceived,
+        totalProjectReceived,
+        totalOfficeIncome,
         totalPurchases,
         totalUtilities,
         totalCharges,
@@ -140,6 +96,7 @@ export async function GET(req: NextRequest) {
       charges,
       otherExpenses,
       officeExpenses,
+      officeIncome,
     });
   } catch (err) {
     return handleApiError(err);

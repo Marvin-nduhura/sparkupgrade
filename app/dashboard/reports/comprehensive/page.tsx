@@ -208,6 +208,7 @@ export default function ComprehensiveReportPage() {
   const charges = report?.charges || [];
   const otherExpenses = report?.otherExpenses || [];
   const officeExpenses = report?.officeExpenses || [];
+  const officeIncome = report?.officeIncome || [];
 
   return (
     <div className="page-container">
@@ -264,14 +265,25 @@ export default function ComprehensiveReportPage() {
 
           {/* Expense breakdown */}
           <div className="bg-card border border-border rounded-2xl p-4">
-            <h3 className="font-semibold text-sm mb-3">Expenditure Breakdown</h3>
+            <h3 className="font-semibold text-sm mb-3">Financial Summary</h3>
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 mb-3">
+              {[
+                { label: "Project Income", value: s.totalProjectReceived || s.totalReceived || 0, color: "text-green-700", bg: "bg-green-50 dark:bg-green-950/20" },
+                { label: "Office Income", value: s.totalOfficeIncome || 0, color: "text-emerald-700", bg: "bg-emerald-50 dark:bg-emerald-950/20" },
+              ].map(item => item.value > 0 && (
+                <div key={item.label} className={cn("p-3 rounded-xl text-center", item.bg)}>
+                  <p className={cn("font-bold text-sm", item.color)}>{formatCurrency(item.value)}</p>
+                  <p className="text-xs text-muted-foreground">{item.label}</p>
+                </div>
+              ))}
+            </div>
             <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
               {[
                 { label: "Purchases", value: s.totalPurchases || 0, color: "text-orange-600", bg: "bg-orange-50 dark:bg-orange-950/20" },
                 { label: "Utilities", value: s.totalUtilities || 0, color: "text-yellow-600", bg: "bg-yellow-50 dark:bg-yellow-950/20" },
                 { label: "Charges", value: s.totalCharges || 0, color: "text-purple-600", bg: "bg-purple-50 dark:bg-purple-950/20" },
                 { label: "Other", value: s.totalOther || 0, color: "text-pink-600", bg: "bg-pink-50 dark:bg-pink-950/20" },
-                { label: "Office", value: s.totalOffice || 0, color: "text-cyan-600", bg: "bg-cyan-50 dark:bg-cyan-950/20" },
+                { label: "Office Exp.", value: s.totalOffice || 0, color: "text-cyan-600", bg: "bg-cyan-50 dark:bg-cyan-950/20" },
               ].map(item => (
                 <div key={item.label} className={cn("p-3 rounded-xl text-center", item.bg)}>
                   <p className={cn("text-base font-bold", item.color)}>{formatCurrency(item.value)}</p>
@@ -289,7 +301,7 @@ export default function ComprehensiveReportPage() {
 
           {/* Money Received */}
           <SectionTable
-            title="Money Received"
+            title="Money Received (Projects)"
             icon={TrendingUp}
             iconColor="green"
             items={received}
@@ -302,6 +314,23 @@ export default function ComprehensiveReportPage() {
               { key: "reference", label: "Ref", render: (r: any) => r.reference || "—" },
               { key: "receipt", label: "Receipt", render: (r: any) => <ReceiptIcon receipt={r.receipt} onView={setViewReceiptUrl} /> },
               { key: "amount", label: "Amount", className: "text-right font-bold text-green-600", render: (r: any) => formatCurrency(r.amount) },
+            ]}
+          />
+
+          {/* Office Income */}
+          <SectionTable
+            title="Office Income (Admin/Non-project)"
+            icon={DollarSign}
+            iconColor="emerald"
+            items={officeIncome}
+            columns={[
+              { key: "receivedDate", label: "Date", render: (r: any) => formatDate(r.receivedDate) },
+              { key: "source", label: "Source" },
+              { key: "paymentMethod", label: "Method", render: (r: any) => r.paymentMethod?.replace(/_/g, " ") },
+              { key: "recordedBy", label: "Recorded By", render: (r: any) => r.recordedBy?.name },
+              { key: "reference", label: "Ref", render: (r: any) => r.reference || "—" },
+              { key: "receipt", label: "Receipt", render: (r: any) => <ReceiptIcon receipt={r.receipt} onView={setViewReceiptUrl} /> },
+              { key: "amount", label: "Amount", className: "text-right font-bold text-emerald-600", render: (r: any) => formatCurrency(r.amount) },
             ]}
           />
 
@@ -408,7 +437,7 @@ export default function ComprehensiveReportPage() {
           </div>
 
           {/* Empty state */}
-          {received.length === 0 && purchases.length === 0 && utilities.length === 0 && (
+          {received.length === 0 && officeIncome.length === 0 && purchases.length === 0 && utilities.length === 0 && (
             <div className="py-20 text-center">
               <FileText className="w-16 h-16 mx-auto mb-4 text-muted-foreground opacity-20" />
               <p className="text-muted-foreground">No transactions found for this period</p>

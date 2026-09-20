@@ -41,6 +41,7 @@ export async function GET(req: NextRequest) {
 
     const [
       received, purchases, utilities, charges, otherExpenses, officeExpenses,
+      officeIncome, officeIncomeBefore,
       recvBefore, purchBefore, utilBefore, chargeBefore, otherBefore, officeBefore,
     ] = await Promise.all([
       prisma.moneyReceived.aggregate({ where: { projectId: { in: projectIds }, receivedDate: dateWhere }, _sum: { amount: true }, _count: true }),
@@ -49,6 +50,8 @@ export async function GET(req: NextRequest) {
       prisma.siteCharge.aggregate({ where: { projectId: { in: projectIds }, chargeDate: dateWhere }, _sum: { amount: true } }),
       prisma.otherExpense.aggregate({ where: { projectId: { in: projectIds }, expenseDate: dateWhere }, _sum: { amount: true } }),
       includeOffice ? prisma.officeExpense.aggregate({ where: { expenseDate: dateWhere }, _sum: { amount: true } }) : Promise.resolve({ _sum: { amount: 0 } }),
+      includeOffice ? prisma.officeIncome.aggregate({ where: { receivedDate: dateWhere }, _sum: { amount: true } }) : Promise.resolve({ _sum: { amount: 0 } }),
+      includeOffice ? prisma.officeIncome.aggregate({ where: { receivedDate: before }, _sum: { amount: true } }) : Promise.resolve({ _sum: { amount: 0 } }),
       prisma.moneyReceived.aggregate({ where: { projectId: { in: projectIds }, receivedDate: before }, _sum: { amount: true } }),
       prisma.purchase.aggregate({ where: { projectId: { in: projectIds }, purchaseDate: before }, _sum: { totalAmount: true } }),
       prisma.utility.aggregate({ where: { projectId: { in: projectIds }, usageDate: before }, _sum: { amount: true } }),
@@ -61,9 +64,11 @@ export async function GET(req: NextRequest) {
     const amountDue = purchases.reduce((s, p) => s + p.amountDue, 0);
     const amountPaid = purchases.reduce((s, p) => s + p.amountPaid, 0);
     const periodSpent = purchaseTotal + (utilities._sum.amount || 0) + (charges._sum.amount || 0) + (otherExpenses._sum.amount || 0) + (officeExpenses._sum.amount || 0);
-    const periodReceived = received._sum.amount || 0;
+    const officeIncomeTotal = officeIncome._sum.amount || 0;
+    const periodReceived = (received._sum.amount || 0) + officeIncomeTotal;
     const spentBefore = (purchBefore._sum.totalAmount || 0) + (utilBefore._sum.amount || 0) + (chargeBefore._sum.amount || 0) + (otherBefore._sum.amount || 0) + (officeBefore._sum.amount || 0);
-    const bbf = (recvBefore._sum.amount || 0) - spentBefore;
+    const receivedBefore = (recvBefore._sum.amount || 0) + (officeIncomeBefore._sum.amount || 0);
+    const bbf = receivedBefore - spentBefore;
     const closingBalance = bbf + periodReceived - periodSpent;
 
     const projectBreakdown = await Promise.all(
@@ -112,6 +117,7 @@ export async function GET(req: NextRequest) {
         closingBalance,
         netBalance: closingBalance,
         purchaseCount: purchases.length,
+        officeIncomeTotal,
         period: { start, end },
       },
       breakdown: {
@@ -120,6 +126,7 @@ export async function GET(req: NextRequest) {
         charges: charges._sum.amount || 0,
         otherExpenses: otherExpenses._sum.amount || 0,
         officeExpenses: officeExpenses._sum.amount || 0,
+        officeIncome: officeIncomeTotal,
       },
       projects: projectBreakdown,
     });

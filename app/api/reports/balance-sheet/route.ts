@@ -23,6 +23,7 @@ export async function GET(req: NextRequest) {
       chargesTotal,
       otherExpTotal,
       officeExpTotal,
+      officeIncomeAgg,
       projectsData,
     ] = await Promise.all([
       prisma.moneyReceived.aggregate({ where: { receivedDate: dateBefore }, _sum: { amount: true } }),
@@ -32,13 +33,13 @@ export async function GET(req: NextRequest) {
       prisma.siteCharge.aggregate({ where: { chargeDate: dateBefore }, _sum: { amount: true } }),
       prisma.otherExpense.aggregate({ where: { expenseDate: dateBefore }, _sum: { amount: true } }),
       prisma.officeExpense.aggregate({ where: { expenseDate: dateBefore }, _sum: { amount: true } }),
-      prisma.project.findMany({
-        select: { id: true, name: true, status: true, location: true },
-        orderBy: { name: "asc" },
-      }),
+      prisma.officeIncome.aggregate({ where: { receivedDate: dateBefore }, _sum: { amount: true } }),
+      prisma.project.findMany({ select: { id: true, name: true, status: true, location: true }, orderBy: { name: "asc" } }),
     ]);
 
-    const totalIncome = totalReceived._sum.amount || 0;
+    const projectIncomeTotal = totalReceived._sum.amount || 0;
+    const officeIncomeTotal = officeIncomeAgg._sum.amount || 0;
+    const totalIncome = projectIncomeTotal + officeIncomeTotal;
     const purchaseAmount = purchasesTotal._sum.totalAmount || 0;
     const utilitiesAmount = utilitiesTotal._sum.amount || 0;
     const chargesAmount = chargesTotal._sum.amount || 0;
@@ -86,9 +87,10 @@ export async function GET(req: NextRequest) {
     );
 
     const income = [
-      { label: "Funds Received from Projects", amount: totalIncome },
+      { label: "Funds Received from Projects", amount: projectIncomeTotal },
+      { label: "Office Income (Admin/Non-project)", amount: officeIncomeTotal },
       { label: "TOTAL INCOME", amount: totalIncome, isTotal: true },
-    ];
+    ].filter(r => r.amount > 0 || r.isTotal);
 
     const expenditure = [
       { label: "Materials & Purchases", amount: purchaseAmount },

@@ -43,33 +43,22 @@ export async function GET(req: NextRequest) {
     const dateWhere = { gte: start, lte: end };
     const before = { lt: start };
 
-    const [received, purchases, utilities, charges, otherExpenses, officeExpenses,
-      recvBefore, purchBefore, utilBefore, chargeBefore, otherBefore, officeBefore] = await Promise.all([
-      prisma.moneyReceived.findMany({
-        where: { projectId: { in: ids }, receivedDate: dateWhere },
-        include: { project: { select: { name: true } }, receivedBy: { select: { name: true } } },
-        orderBy: { receivedDate: "desc" },
-      }),
-      prisma.purchase.findMany({
-        where: { projectId: { in: ids }, purchaseDate: dateWhere },
-        include: {
-          project: { select: { name: true } },
-          purchasedBy: { select: { name: true } },
-          items: { include: { item: { select: { name: true, unit: true } } } },
-          installments: { orderBy: { paymentDate: "asc" } },
-        },
-        orderBy: { purchaseDate: "desc" },
-      }),
+    const [received, purchases, utilities, charges, otherExpenses, officeExpenses, officeIncome,
+      recvBefore, purchBefore, utilBefore, chargeBefore, otherBefore, officeBefore, officeIncomeBefore] = await Promise.all([
+      prisma.moneyReceived.findMany({ where: { projectId: { in: ids }, receivedDate: dateWhere }, include: { project: { select: { name: true } }, receivedBy: { select: { name: true } } }, orderBy: { receivedDate: "desc" } }),
+      prisma.purchase.findMany({ where: { projectId: { in: ids }, purchaseDate: dateWhere }, include: { project: { select: { name: true } }, purchasedBy: { select: { name: true } }, items: { include: { item: { select: { name: true, unit: true } } } }, installments: { orderBy: { paymentDate: "asc" } } }, orderBy: { purchaseDate: "desc" } }),
       prisma.utility.findMany({ where: { projectId: { in: ids }, usageDate: dateWhere }, include: { project: { select: { name: true } } } }),
       prisma.siteCharge.findMany({ where: { projectId: { in: ids }, chargeDate: dateWhere }, include: { project: { select: { name: true } } } }),
       prisma.otherExpense.findMany({ where: { projectId: { in: ids }, expenseDate: dateWhere }, include: { project: { select: { name: true } } } }),
       prisma.officeExpense.findMany({ where: { expenseDate: dateWhere }, include: { user: { select: { name: true } } } }),
+      prisma.officeIncome.findMany({ where: { receivedDate: dateWhere }, include: { recordedBy: { select: { name: true } } }, orderBy: { receivedDate: "desc" } }),
       prisma.moneyReceived.aggregate({ where: { projectId: { in: ids }, receivedDate: before }, _sum: { amount: true } }),
       prisma.purchase.aggregate({ where: { projectId: { in: ids }, purchaseDate: before }, _sum: { totalAmount: true } }),
       prisma.utility.aggregate({ where: { projectId: { in: ids }, usageDate: before }, _sum: { amount: true } }),
       prisma.siteCharge.aggregate({ where: { projectId: { in: ids }, chargeDate: before }, _sum: { amount: true } }),
       prisma.otherExpense.aggregate({ where: { projectId: { in: ids }, expenseDate: before }, _sum: { amount: true } }),
       prisma.officeExpense.aggregate({ where: { expenseDate: before }, _sum: { amount: true } }),
+      prisma.officeIncome.aggregate({ where: { receivedDate: before }, _sum: { amount: true } }),
     ]);
 
     // Inventory usage for daily reports
@@ -82,21 +71,23 @@ export async function GET(req: NextRequest) {
       });
     }
 
-    const totalReceived = received.reduce((s, r) => s + r.amount, 0);
+    const totalProjectReceived = received.reduce((s, r) => s + r.amount, 0);
+    const totalOfficeIncome = officeIncome.reduce((s, o) => s + o.amount, 0);
+    const totalReceived = totalProjectReceived + totalOfficeIncome;
     const totalPurchases = purchases.reduce((s, p) => s + p.totalAmount, 0);
     const totalUtilities = utilities.reduce((s, u) => s + u.amount, 0);
     const totalCharges = charges.reduce((s, c) => s + c.amount, 0);
     const totalOther = otherExpenses.reduce((s, o) => s + o.amount, 0);
     const totalOffice = officeExpenses.reduce((s, o) => s + o.amount, 0);
     const totalSpent = totalPurchases + totalUtilities + totalCharges + totalOther + totalOffice;
-    const bbf = (recvBefore._sum.amount || 0) - ((purchBefore._sum.totalAmount || 0) + (utilBefore._sum.amount || 0) + (chargeBefore._sum.amount || 0) + (otherBefore._sum.amount || 0) + (officeBefore._sum.amount || 0));
+    const bbf = ((recvBefore._sum.amount || 0) + (officeIncomeBefore._sum.amount || 0)) - ((purchBefore._sum.totalAmount || 0) + (utilBefore._sum.amount || 0) + (chargeBefore._sum.amount || 0) + (otherBefore._sum.amount || 0) + (officeBefore._sum.amount || 0));
     const balance = bbf + totalReceived - totalSpent;
 
     const company = await prisma.companySettings.findFirst();
     const ctx = {
-      company, received, purchases, utilities, charges, otherExpenses, officeExpenses,
-      usageRecords, projects, totalReceived, totalPurchases, totalUtilities, totalCharges,
-      totalOther, totalOffice, totalSpent, bbf, balance,
+      company, received, purchases, utilities, charges, otherExpenses, officeExpenses, officeIncome,
+      usageRecords, projects, totalReceived, totalProjectReceived, totalOfficeIncome,
+      totalPurchases, totalUtilities, totalCharges, totalOther, totalOffice, totalSpent, bbf, balance,
       period: { start, end }, generatedBy: session.user.name as string, reportType,
     };
 
@@ -135,6 +126,8 @@ export async function GET(req: NextRequest) {
       const rows = [
         ["Balance Brought Forward (UGX)", bbf],
         ["Total Money Received (UGX)", totalReceived],
+        ["  — Project Funds Received", ctx.totalProjectReceived || totalReceived],
+        ["  — Office Income", ctx.totalOfficeIncome || 0],
         ["", ""],
         ["Purchases (UGX)", totalPurchases],
         ["Utilities (UGX)", totalUtilities],
@@ -219,6 +212,15 @@ export async function GET(req: NextRequest) {
         officeExpenses.forEach((o: any) => wsOff.addRow([format(new Date(o.expenseDate), "dd/MM/yyyy"), o.user?.name, o.name, o.category, o.paymentMethod?.replace(/_/g, " "), o.amount]));
       }
 
+      // Office Income
+      if ((officeIncome || []).length > 0) {
+        const wsOI = wb.addWorksheet("Office Income");
+        addSheetHeader(wsOI, "Office Income");
+        const oiH = wsOI.addRow(["Date", "Source", "Payment Method", "Reference", "By", "Amount (UGX)"]);
+        oiH.eachCell(c => { c.font = { bold: true }; c.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFdcfce7" } }; });
+        officeIncome.forEach((o: any) => wsOI.addRow([format(new Date(o.receivedDate), "dd/MM/yyyy"), o.source, o.paymentMethod?.replace(/_/g, " "), o.reference || "", o.recordedBy?.name, o.amount]));
+      }
+
       // Inventory Usage (daily)
       if (usageRecords.length > 0) {
         const wsI = wb.addWorksheet("Inventory Usage");
@@ -259,7 +261,7 @@ export async function GET(req: NextRequest) {
 
 // ── HTML/PDF builder ─────────────────────────────────────────────────────────
 function buildHtml(ctx: any) {
-  const { company, received, purchases, utilities, charges, otherExpenses, officeExpenses,
+  const { company, received, purchases, utilities, charges, otherExpenses, officeExpenses, officeIncome,
     usageRecords, totalReceived, totalPurchases, totalUtilities, totalCharges, totalOther,
     totalOffice, totalSpent, bbf, balance, period, generatedBy, reportType } = ctx;
 
@@ -297,6 +299,9 @@ function buildHtml(ctx: any) {
   ).join("");
   const officeRows = officeExpenses.map((o: any) =>
     `<tr><td>${D(o.expenseDate)}</td><td>${o.user?.name}</td><td>${o.name}</td><td>${o.category}</td><td class="amt red">${C(o.amount)}</td></tr>`
+  ).join("");
+  const officeIncomeRows = (officeIncome || []).map((o: any) =>
+    `<tr><td>${D(o.receivedDate)}</td><td>${o.source}</td><td>${o.paymentMethod?.replace(/_/g," ")}</td><td>${o.reference||"—"}</td><td>${o.recordedBy?.name||"—"}</td><td class="amt green"><b>${C(o.amount)}</b></td></tr>`
   ).join("");
   const usageRows = usageRecords.map((u: any) =>
     `<tr><td>${D(u.usedDate)}</td><td>${u.item?.name}</td><td>${u.item?.unit}</td>
@@ -370,6 +375,7 @@ ${utilities.length>0?`<div class="section"><h2>⚡ Utilities (${utilities.length
 ${charges.length>0?`<div class="section"><h2>🔧 Site Charges (${charges.length})</h2><table><thead><tr><th>Date</th><th>Project</th><th>Name</th><th>Category</th><th class="amt">Amount (UGX)</th></tr></thead><tbody>${chargeRows}</tbody><tfoot><tr><td colspan="4"><b>Total</b></td><td class="amt red"><b>${C(totalCharges)}</b></td></tr></tfoot></table></div>`:""}
 ${otherExpenses.length>0?`<div class="section"><h2>📋 Other Expenses (${otherExpenses.length})</h2><table><thead><tr><th>Date</th><th>Project</th><th>Name</th><th>Category</th><th class="amt">Amount (UGX)</th></tr></thead><tbody>${otherRows}</tbody><tfoot><tr><td colspan="4"><b>Total</b></td><td class="amt red"><b>${C(totalOther)}</b></td></tr></tfoot></table></div>`:""}
 ${officeExpenses.length>0?`<div class="section"><h2>🏢 Office Expenses (${officeExpenses.length})</h2><table><thead><tr><th>Date</th><th>By</th><th>Name</th><th>Category</th><th class="amt">Amount (UGX)</th></tr></thead><tbody>${officeRows}</tbody><tfoot><tr><td colspan="4"><b>Total</b></td><td class="amt red"><b>${C(totalOffice)}</b></td></tr></tfoot></table></div>`:""}
+${(officeIncome||[]).length>0?`<div class="section"><h2>💼 Office Income (${officeIncome.length})</h2><table><thead><tr><th>Date</th><th>Source</th><th>Method</th><th>Reference</th><th>By</th><th class="amt">Amount (UGX)</th></tr></thead><tbody>${officeIncomeRows}</tbody><tfoot><tr><td colspan="5"><b>Total</b></td><td class="amt green"><b>${C((officeIncome||[]).reduce((s:number,o:any)=>s+o.amount,0))}</b></td></tr></tfoot></table></div>`:""}
 ${usageRecords.length>0?`<div class="section"><h2>📦 Inventory Usage (${usageRecords.length})</h2><table><thead><tr><th>Date</th><th>Item</th><th>Unit</th><th>Type</th><th class="amt">Qty</th><th>Recorded By</th><th>Notes</th></tr></thead><tbody>${usageRows}</tbody></table></div>`:""}
 <div class="closing">
   <h2>Closing Balance (${format(period.end,"dd MMM yyyy")})</h2>

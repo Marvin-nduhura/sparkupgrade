@@ -52,6 +52,7 @@ const navItems: NavItem[] = [
       { label: "Money Received", href: "/dashboard/finances/received", icon: TrendingUp, roles: ["SYSTEM_ADMIN", "ACCOUNTANT"], panel: "site" },
       { label: "Site Expenses", href: "/dashboard/finances/expenses", icon: Zap, roles: ["SYSTEM_ADMIN", "ACCOUNTANT"], panel: "site" },
       { label: "Office Expenses", href: "/dashboard/finances/office", icon: Wrench, roles: ["SYSTEM_ADMIN", "ACCOUNTANT"], panel: "site" },
+      { label: "Office Income", href: "/dashboard/finances/office-income", icon: TrendingUp, roles: ["SYSTEM_ADMIN", "ACCOUNTANT"], panel: "site" },
       { label: "Transfers", href: "/dashboard/finances/transfers", icon: Send, roles: ["SYSTEM_ADMIN", "ACCOUNTANT"], panel: "both" },
     ],
   },
