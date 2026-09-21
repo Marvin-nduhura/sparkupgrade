@@ -7,7 +7,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
   Settings, User, Palette, Bell, Shield, Building2, CreditCard,
   Eye, EyeOff, Save, Loader2, Moon, Sun, Monitor, Check,
-  Phone, Mail, Lock, Camera, Upload, X, LogOut
+  Phone, Mail, Lock, Camera, Upload, X, LogOut, Trash2, AlertTriangle
 } from "lucide-react";
 import { useForm } from "react-hook-form";
 import { useTheme } from "next-themes";
@@ -29,7 +29,7 @@ const COLOR_SCHEMES = [
 ];
 
 const TABS = ["Profile", "Security", "Appearance", "Notifications", "Payment Accounts"];
-const ADMIN_TABS = [...TABS, "Company Settings"];
+const ADMIN_TABS = [...TABS, "Company Settings", "Danger Zone"];
 
 export default function SettingsPage() {
   const { data: session, update } = useSession();
@@ -78,6 +78,7 @@ export default function SettingsPage() {
               {activeTab === "Notifications" && <NotificationsTab />}
               {activeTab === "Payment Accounts" && <PaymentAccountsTab session={session} />}
               {activeTab === "Company Settings" && isAdmin && <CompanySettingsTab />}
+              {activeTab === "Danger Zone" && isAdmin && <DangerZoneTab />}
             </motion.div>
           </AnimatePresence>
         </div>
@@ -381,6 +382,127 @@ function CompanySettingsTab() {
           Save Settings
         </motion.button>
       </form>
+    </div>
+  );
+}
+
+function DangerZoneTab() {
+  const [loading, setLoading] = useState(false);
+  const [result, setResult] = useState<any>(null);
+  const [confirmed, setConfirmed] = useState(false);
+  const [typedWord, setTypedWord] = useState("");
+
+  const handleReset = async () => {
+    if (typedWord !== "RESET") {
+      toast.error('Type "RESET" in the confirmation box first');
+      return;
+    }
+    if (!confirm("⚠️ FINAL WARNING: This will permanently delete ALL projects, purchases, inventory, expenses, receipts, and all other data. Your user accounts will be kept. This CANNOT be undone. Proceed?")) return;
+
+    setLoading(true);
+    setResult(null);
+    try {
+      const res = await fetch("/api/admin/reset-data", {
+        method: "POST",
+        headers: { "x-reset-confirm": "RESET-ALL-DATA" },
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      setResult(data);
+      toast.success("✅ All data cleared. System is now empty.");
+      setTypedWord("");
+      setConfirmed(false);
+    } catch (e: any) {
+      toast.error(e.message || "Reset failed");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="space-y-4">
+      {/* Warning banner */}
+      <div className="bg-red-50 dark:bg-red-950/20 border-2 border-red-300 dark:border-red-800 rounded-2xl p-5">
+        <div className="flex items-start gap-3">
+          <AlertTriangle className="w-6 h-6 text-red-500 flex-shrink-0 mt-0.5" />
+          <div>
+            <h3 className="font-bold text-red-700 dark:text-red-400 text-base">Danger Zone</h3>
+            <p className="text-sm text-red-600 dark:text-red-400 mt-1">
+              These actions are <strong>irreversible</strong>. Read carefully before proceeding.
+            </p>
+          </div>
+        </div>
+      </div>
+
+      {/* Reset Card */}
+      <div className="bg-card border-2 border-red-200 dark:border-red-800 rounded-2xl p-6 space-y-4">
+        <div className="flex items-start gap-3">
+          <div className="w-10 h-10 bg-red-100 dark:bg-red-900/30 rounded-xl flex items-center justify-center flex-shrink-0">
+            <Trash2 className="w-5 h-5 text-red-500" />
+          </div>
+          <div>
+            <h4 className="font-bold text-sm">Clear All Demo / Test Data</h4>
+            <p className="text-xs text-muted-foreground mt-1 leading-relaxed">
+              Deletes all projects, purchases, inventory items, expenses, money received, receipts,
+              reports, notifications, and transfers. <br />
+              <strong>Your 3 user accounts (admin, site manager, accountant) will be kept.</strong><br />
+              Use this to start fresh with your real data.
+            </p>
+          </div>
+        </div>
+
+        <div className="bg-muted/50 rounded-xl p-3 text-xs text-muted-foreground space-y-1">
+          <p className="font-semibold text-foreground">What will be deleted:</p>
+          <p>Projects · Purchases · Inventory · Expenses · Utilities · Charges</p>
+          <p>Money Received · Office Income · Office Expenses · Receipts</p>
+          <p>Notifications · Transfers · Requests · Reports · Audit Logs</p>
+          <p className="font-semibold text-green-600 mt-2">What will be kept:</p>
+          <p>All 3 user accounts with their passwords, roles, and contact details</p>
+        </div>
+
+        {/* Confirmation input */}
+        <div>
+          <label className="text-sm font-medium mb-1.5 block">
+            Type <strong className="text-red-500">RESET</strong> to confirm:
+          </label>
+          <input
+            value={typedWord}
+            onChange={e => setTypedWord(e.target.value.toUpperCase())}
+            placeholder="Type RESET here..."
+            className="input-styled border-red-200 dark:border-red-800 focus:border-red-400 focus:ring-red-200"
+          />
+        </div>
+
+        <motion.button
+          onClick={handleReset}
+          disabled={loading || typedWord !== "RESET"}
+          whileHover={{ scale: typedWord === "RESET" ? 1.02 : 1 }}
+          whileTap={{ scale: typedWord === "RESET" ? 0.98 : 1 }}
+          className="w-full py-3 rounded-xl text-sm font-bold flex items-center justify-center gap-2 transition-all bg-red-500 text-white hover:bg-red-600 disabled:opacity-40 disabled:cursor-not-allowed"
+        >
+          {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+          {loading ? "Clearing data..." : "Clear All Data (Keep Users)"}
+        </motion.button>
+      </div>
+
+      {/* Result */}
+      {result && (
+        <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}
+          className="bg-green-50 dark:bg-green-950/20 border border-green-200 dark:border-green-800 rounded-2xl p-4">
+          <p className="font-semibold text-green-700 dark:text-green-400 flex items-center gap-2 mb-3">
+            <Check className="w-5 h-5" /> {result.message}
+          </p>
+          <p className="text-xs font-semibold text-muted-foreground mb-2">Users kept:</p>
+          {result.usersKept?.map((u: any) => (
+            <p key={u.email} className="text-xs text-muted-foreground">
+              • {u.name} &lt;{u.email}&gt; [{u.role}]
+            </p>
+          ))}
+          <p className="text-xs text-muted-foreground mt-3">
+            You can now log in and start entering your real data.
+          </p>
+        </motion.div>
+      )}
     </div>
   );
 }
