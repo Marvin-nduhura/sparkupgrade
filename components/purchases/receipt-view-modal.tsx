@@ -5,6 +5,14 @@ import { X, Download, ZoomIn, ZoomOut, ExternalLink, FileText, FileImage, File }
 import { useState } from "react";
 
 function getFileType(url: string): "image" | "pdf" | "word" | "excel" | "other" {
+  // Handle base64 data URLs (stored in DB for Render free tier)
+  if (url.startsWith("data:")) {
+    if (url.startsWith("data:image/")) return "image";
+    if (url.startsWith("data:application/pdf")) return "pdf";
+    if (url.startsWith("data:application/msword") || url.startsWith("data:application/vnd.openxmlformats-officedocument.wordprocessingml")) return "word";
+    if (url.startsWith("data:application/vnd.ms-excel") || url.startsWith("data:application/vnd.openxmlformats-officedocument.spreadsheetml")) return "excel";
+    return "other";
+  }
   const ext = url.split("?")[0].split(".").pop()?.toLowerCase() || "";
   if (["jpg", "jpeg", "png", "gif", "webp", "bmp", "svg"].includes(ext)) return "image";
   if (ext === "pdf") return "pdf";
@@ -31,15 +39,43 @@ export function ReceiptViewModal({
   const displayName = fileName || url.split("/").pop() || "receipt";
 
   const handleDownload = () => {
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = displayName;
-    a.target = "_blank";
-    a.click();
+    if (url.startsWith("data:")) {
+      // Base64 data URL — create a blob and trigger download
+      const [meta, data] = url.split(",");
+      const mime = meta.split(":")[1].split(";")[0];
+      const binary = atob(data);
+      const bytes = new Uint8Array(binary.length);
+      for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+      const blob = new Blob([bytes], { type: mime });
+      const blobUrl = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = blobUrl;
+      a.download = fileName || `receipt.${mime.split("/")[1] || "jpg"}`;
+      a.click();
+      URL.revokeObjectURL(blobUrl);
+    } else {
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = fileName || url.split("/").pop() || "receipt";
+      a.target = "_blank";
+      a.click();
+    }
   };
 
   const handleOpenExternal = () => {
-    window.open(url, "_blank", "noopener,noreferrer");
+    if (url.startsWith("data:")) {
+      // For data URLs, open as blob in new tab
+      const [meta, data] = url.split(",");
+      const mime = meta.split(":")[1].split(";")[0];
+      const binary = atob(data);
+      const bytes = new Uint8Array(binary.length);
+      for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+      const blob = new Blob([bytes], { type: mime });
+      const blobUrl = URL.createObjectURL(blob);
+      window.open(blobUrl, "_blank", "noopener,noreferrer");
+    } else {
+      window.open(url, "_blank", "noopener,noreferrer");
+    }
   };
 
   return (
