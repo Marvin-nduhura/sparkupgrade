@@ -98,8 +98,42 @@ export async function DELETE(req: NextRequest, { params }: { params: { id: strin
   try {
     const session = await auth();
     requireRole(session, "SYSTEM_ADMIN");
-    await prisma.project.delete({ where: { id: params.id } });
-    await createAuditLog({ userId: session!.user.id, action: "DELETE", resource: "Project", resourceId: params.id });
+
+    const id = params.id;
+
+    // Delete all child records in dependency order before deleting the project
+    // (Foreign key constraints don't all have CASCADE, so we do it manually)
+    await prisma.auditLog.deleteMany({ where: { projectId: id } });
+    await prisma.notification.deleteMany({ where: { projectId: id } });
+    await prisma.inventoryUsage.deleteMany({ where: { projectId: id } });
+    await prisma.projectImage.deleteMany({ where: { projectId: id } });
+
+    // Purchases → items + installments first
+    const purchases = await prisma.purchase.findMany({ where: { projectId: id }, select: { id: true } });
+    const purchaseIds = purchases.map(p => p.id);
+    if (purchaseIds.length) {
+      await prisma.purchaseItem.deleteMany({ where: { purchaseId: { in: purchaseIds } } });
+      await prisma.installment.deleteMany({ where: { purchaseId: { in: purchaseIds } } });
+    }
+    await prisma.purchase.deleteMany({ where: { projectId: id } });
+
+    // Requests → items first
+    const requests = await prisma.request.findMany({ where: { projectId: id }, select: { id: true } });
+    if (requests.length) {
+      await prisma.requestItem.deleteMany({ where: { requestId: { in: requests.map(r => r.id) } } });
+    }
+    await prisma.request.deleteMany({ where: { projectId: id } });
+
+    await prisma.moneyReceived.deleteMany({ where: { projectId: id } });
+    await prisma.utility.deleteMany({ where: { projectId: id } });
+    await prisma.siteCharge.deleteMany({ where: { projectId: id } });
+    await prisma.otherExpense.deleteMany({ where: { projectId: id } });
+    await prisma.projectInventory.deleteMany({ where: { projectId: id } });
+    await prisma.projectAssignment.deleteMany({ where: { projectId: id } });
+
+    await prisma.project.delete({ where: { id } });
+
+    await createAuditLog({ userId: session!.user.id, action: "DELETE", resource: "Project", resourceId: id });
     return NextResponse.json({ success: true });
   } catch (err) { return handleApiError(err); }
 }
