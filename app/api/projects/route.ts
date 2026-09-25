@@ -3,9 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { createAuditLog } from "@/lib/audit";
-import path from "path";
-import fs from "fs/promises";
-import { v4 as uuidv4 } from "uuid";
+import { saveUploadedFile } from "@/lib/upload";
 
 export async function GET(req: NextRequest) {
   try {
@@ -28,7 +26,6 @@ export async function GET(req: NextRequest) {
     }
     if (status) where.status = status;
 
-    // Site managers only see assigned projects
     if (session.user.role === "SITE_MANAGER") {
       const assignments = await prisma.projectAssignment.findMany({
         where: { userId: session.user.id, isActive: true },
@@ -39,15 +36,15 @@ export async function GET(req: NextRequest) {
 
     const [projects, total] = await Promise.all([
       prisma.project.findMany({
-        where,
-        skip,
-        take: limit,
+        where, skip, take: limit,
         orderBy: { createdAt: "desc" },
         include: {
           assignments: {
             where: { isActive: true },
             include: { user: { select: { id: true, name: true, avatar: true } } },
           },
+          moneyReceived: { select: { amount: true } },
+          purchases: { select: { totalAmount: true } },
           _count: { select: { purchases: true, requests: true, images: true } },
         },
       }),
@@ -74,34 +71,26 @@ export async function POST(req: NextRequest) {
     const formData = await req.formData();
     const name = formData.get("name") as string;
     const location = formData.get("location") as string;
-    const description = formData.get("description") as string | undefined;
+    const description = (formData.get("description") as string) || undefined;
     const latitude = formData.get("latitude") ? parseFloat(formData.get("latitude") as string) : undefined;
     const longitude = formData.get("longitude") ? parseFloat(formData.get("longitude") as string) : undefined;
     const budget = formData.get("budget") ? parseFloat(formData.get("budget") as string) : undefined;
-    const startDate = formData.get("startDate") as string | undefined;
-    const endDate = formData.get("endDate") as string | undefined;
+    const startDate = (formData.get("startDate") as string) || undefined;
+    const endDate = (formData.get("endDate") as string) || undefined;
     const image = formData.get("image") as File | null;
 
     let imageUrl: string | undefined;
-    if (image) {
-      const uploadDir = path.join(process.cwd(), "public", "uploads", "projects");
-      await fs.mkdir(uploadDir, { recursive: true });
-      const ext = image.name.split(".").pop();
-      const filename = `${uuidv4()}.${ext}`;
-      const buffer = Buffer.from(await image.arrayBuffer());
-      await fs.writeFile(path.join(uploadDir, filename), buffer);
-      imageUrl = `/uploads/projects/${filename}`;
+    if (image && image.size > 0) {
+      // saveUploadedFile handles production (base64 in DB) vs local (disk) automatically
+      imageUrl = await saveUploadedFile(image, "projects", [
+        "image/jpeg", "image/png", "image/webp", "image/gif",
+      ]);
     }
 
     const project = await prisma.project.create({
       data: {
-        name,
-        location,
-        description,
-        latitude,
-        longitude,
-        budget,
-        imageUrl,
+        name, location, description,
+        latitude, longitude, budget, imageUrl,
         startDate: startDate ? new Date(startDate) : new Date(),
         endDate: endDate ? new Date(endDate) : undefined,
         createdById: session.user.id,
@@ -109,11 +98,8 @@ export async function POST(req: NextRequest) {
     });
 
     await createAuditLog({
-      userId: session.user.id,
-      projectId: project.id,
-      action: "CREATE",
-      resource: "Project",
-      resourceId: project.id,
+      userId: session.user.id, projectId: project.id,
+      action: "CREATE", resource: "Project", resourceId: project.id,
       details: { name, location },
     });
 

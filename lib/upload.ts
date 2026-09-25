@@ -13,30 +13,39 @@ const ALLOWED_DOC_TYPES = [
   "text/plain",
 ];
 const MAX_SIZE_MB = 10;
+// Images above this size will be compressed / rejected for base64 storage
+const MAX_IMAGE_BASE64_MB = 4;
 
-// On Render free tier there is no persistent disk.
-// We store in /tmp (ephemeral) and serve via /api/files.
-// On local dev or paid tier with PERSISTENT_DISK=true, serve from public/uploads.
+function isProduction(): boolean {
+  return process.env.NODE_ENV === "production";
+}
+
 function getUploadBase(): string {
-  if (process.env.NODE_ENV === "production" && process.env.PERSISTENT_DISK !== "true") {
+  if (isProduction() && process.env.PERSISTENT_DISK !== "true") {
     return "/tmp/buildspark-uploads";
   }
   return path.join(process.cwd(), "public", "uploads");
 }
 
 function getPublicUrl(subDir: string, filename: string): string {
-  if (process.env.NODE_ENV === "production" && process.env.PERSISTENT_DISK !== "true") {
+  if (isProduction() && process.env.PERSISTENT_DISK !== "true") {
     return `/api/files/${subDir}/${filename}`;
   }
   return `/uploads/${subDir}/${filename}`;
 }
 
+/**
+ * Save an uploaded file.
+ * - Images on production (Render free tier): stored as base64 data URLs in the DB field.
+ *   This avoids /tmp ephemeral loss on container restart.
+ * - Documents (PDF, Word, Excel): still saved to disk and served via /api/files.
+ * - Local dev: always saved to public/uploads and served statically.
+ */
 export async function saveUploadedFile(
   file: File,
   subDir: string,
   allowedTypes: string[] = ALLOWED_DOC_TYPES
 ): Promise<string> {
-  // Accept if explicitly allowed, or if it's any image/* or application/* type
   const isAllowed = allowedTypes.includes(file.type) ||
     file.type.startsWith("image/") ||
     file.type === "application/octet-stream";
@@ -44,17 +53,30 @@ export async function saveUploadedFile(
   if (!isAllowed) {
     throw new Error(`File type "${file.type}" is not allowed.`);
   }
+
   const sizeInMB = file.size / (1024 * 1024);
   if (sizeInMB > MAX_SIZE_MB) {
     throw new Error(`File size ${sizeInMB.toFixed(1)} MB exceeds the ${MAX_SIZE_MB} MB limit.`);
   }
 
+  const buffer = Buffer.from(await file.arrayBuffer());
+
+  // On production Render free tier: store images as base64 data URLs
+  // This persists in the database and is never lost on container restart
+  if (isProduction() && process.env.PERSISTENT_DISK !== "true" && file.type.startsWith("image/")) {
+    if (sizeInMB > MAX_IMAGE_BASE64_MB) {
+      throw new Error(`Image size ${sizeInMB.toFixed(1)} MB is too large. Maximum ${MAX_IMAGE_BASE64_MB} MB for images.`);
+    }
+    const base64 = buffer.toString("base64");
+    return `data:${file.type};base64,${base64}`;
+  }
+
+  // For documents on production, or everything on local dev: save to disk
   const uploadDir = path.join(getUploadBase(), subDir);
   await fs.mkdir(uploadDir, { recursive: true });
 
   const ext = file.name.split(".").pop()?.toLowerCase() || "bin";
   const filename = `${uuidv4()}.${ext}`;
-  const buffer = Buffer.from(await file.arrayBuffer());
   await fs.writeFile(path.join(uploadDir, filename), buffer);
 
   return getPublicUrl(subDir, filename);
@@ -62,7 +84,7 @@ export async function saveUploadedFile(
 
 export async function deleteUploadedFile(fileUrl: string): Promise<void> {
   try {
-    if (!fileUrl) return;
+    if (!fileUrl || fileUrl.startsWith("data:")) return; // base64 — nothing to delete on disk
     let filePath: string;
     if (fileUrl.startsWith("/api/files/")) {
       filePath = path.join("/tmp/buildspark-uploads", fileUrl.replace("/api/files/", ""));
